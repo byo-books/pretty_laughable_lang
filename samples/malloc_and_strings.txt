@@ -1,0 +1,144 @@
+
+(var heap (ptr byte))
+
+; a fake malloc
+(def (malloc ptr byte) ((n int)) (do
+    (if (not heap) (do
+        ; create the heap via mmap()
+        (var heapsz 1048576)    ; 1M
+        (var prot 3)            ; PROT_READ|PROT_WRITE
+        (var flags 0x22)        ; MAP_PRIVATE|MAP_ANONYMOUS
+        (var fd -1)
+        (var offset 0)
+        (var r (syscall 9 0x820000 heapsz prot flags fd offset))
+        (set heap (cast (ptr byte) r))
+    ))
+    ; just move the heap pointer forward
+    (var r heap)
+    (set heap (+ n heap))
+    (return r)
+))
+
+; never free anything
+(def (free void) ((p ptr byte)) (do))
+
+; allocate a new string.
+; the length and capacity are stored before the string data.
+(def (strnew ptr byte) ((cap int)) (do
+    (var addr (call malloc (+ 16 cap)))
+    (var iaddr (cast (ptr int) addr))
+    (poke iaddr 0)
+    (poke (+ 1 iaddr) cap)
+    (return (+ 16 addr))
+))
+
+; free the string
+(def (strdel void) ((s ptr byte)) (do
+    (call free (- s 16))
+))
+
+; access the len and the cap
+(def (strlen int) ((s ptr byte)) (do
+    (var iaddr (cast (ptr int) s))
+    (return (peek (- iaddr 2)))
+))
+(def (strcap int) ((s ptr byte)) (do
+    (var iaddr (cast (ptr int) s))
+    (return (peek (- iaddr 1)))
+))
+
+; copy data byte by byte
+(def (memcpy void) ((dst ptr byte) (src ptr byte) (n int)) (do
+    (loop n (do
+        (poke dst (peek src))
+        (set dst (+ 1 dst))
+        (set src (+ 1 src))
+        (set n (- n 1))
+    ))
+))
+
+; append a character to a string, growing it if necessary.
+(def (append ptr byte) ((s ptr byte) (ch byte)) (do
+    (var len (call strlen s))
+    (var cap (call strcap s))
+    (if (eq len cap) (do
+        ; create a new string with double the capacity
+        (set cap (* 2 cap))
+        (if (lt cap 8) (set cap 8))
+        (var new (call strnew cap))
+        ; copy the data to the new string and replace the old one
+        (call memcpy new s len)
+        (call strdel s)
+        (set s new)
+    ))
+    ; write the character
+    (poke (+ len s) ch)
+    ; update the length field
+    (poke (cast (ptr int) (- s 16)) (+ 1 len))
+    (return s)
+))
+
+; print a string to stdout
+(def (print void) ((s ptr byte)) (do
+    (var len (call strlen s))
+    (syscall 1 1 s len)
+))
+
+; reverse a string in place
+(def (strrev ptr byte) ((s ptr byte)) (do
+    (var l s)
+    (var r (- (+ s (call strlen s)) 1))
+    (loop (lt l r) (do
+        (var t (peek l))
+        (poke l (peek r))
+        (poke r t)
+        (set l (+ l 1))
+        (set r (- r 1))
+    ))
+    (return s)
+))
+
+; convert a int to string
+; FIXME: negative numbers
+(def (str ptr byte) ((i int)) (do
+    (var s (call strnew 24))
+    (if (eq 0 i) (call append s '0'))
+    (loop i (do
+        (var d (+ 48 (% i 10)))
+        (set i (/ i 10))
+        (set s (call append s (cast (byte) d)))
+    ))
+    (call strrev s)
+    (return s)
+))
+
+; print a int
+(def (print void) ((i int)) (do
+    (var s (call str i))
+    (call print s)
+    (call strdel s)
+))
+
+; hello world
+(var s (call strnew 0))
+(set s (call append s 72u8))
+(set s (call append s 101u8))
+(set s (call append s 108u8))
+(set s (call append s 108u8))
+(set s (call append s 111u8))
+
+(set s (call append s '_'))
+(set s (call append s 'w'))
+(set s (call append s 'o'))
+(set s (call append s 'r'))
+(set s (call append s 'l'))
+(set s (call append s 'd'))
+(set s (call append s 10u8))
+
+(call print s)
+(call print (call strlen s))
+(call print (call strcap s))
+(call print s)
+
+; return
+0

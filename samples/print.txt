@@ -1,0 +1,12 @@
+(def (strlen int) ((s ptr byte)) (do
+    (var start s)
+    (loop (peek s) (set s (+ 1 s)))
+    (return (- s start))
+))
+
+(def (print void) ((s ptr byte)) (do
+    (syscall 1 1 s (call strlen s))
+))
+
+(call print "Yes!\n")
+0
