@@ -1,6 +1,6 @@
 # The Pretty Laughable Programming Language
 
-A toy C-like programming language that compiles to x64 binary.
+An educational C-like toy programming language that compiles to x64 binary.
 
 The [compiler](pl_comp.py) is a self-contained Python program that weighs about 1000 LoC.
 
@@ -136,7 +136,7 @@ However, the language doesn't prevent you from building your own memory manageme
         (var flags 0x22)        ; MAP_PRIVATE|MAP_ANONYMOUS
         (var fd -1)
         (var offset 0)
-        (var r (syscall 9 0x820000 heapsz prot flags fd offset))
+        (var r (syscall 9 0 heapsz prot flags fd offset))
         (set heap (cast (ptr byte) r))
     ))
     ; just move the heap pointer forward
@@ -153,7 +153,7 @@ However, the language doesn't prevent you from building your own memory manageme
 
 The Pretty Laughable Language comes with the world's smallest standard library &mdash; no standard library &mdash; not even a `print` function.
 
-But with the ability to make arbitrary syscalls, you can build your own stdlibs. Let's add the `print` function:
+But with the ability to make arbitrary syscalls and peek-poke the memory, you can build your own stdlibs. Let's add the `print` function:
 
 ```clojure
 (def (strlen int) ((s ptr byte)) (do
@@ -169,6 +169,8 @@ But with the ability to make arbitrary syscalls, you can build your own stdlibs.
 (call print "Yes!\n")
 0
 ```
+
+[Here](samples/malloc_and_strings.txt) is a more complicated program you can play with.
 
 ## The Implementation
 

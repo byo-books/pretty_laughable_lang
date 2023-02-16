@@ -1,0 +1,71 @@
+
+(def (mmap ptr byte) ((n int)) (do
+    (var prot 3)            ; PROT_READ|PROT_WRITE
+    (var flags 0x22)        ; MAP_PRIVATE|MAP_ANONYMOUS
+    (var fd -1)
+    (var offset 0)
+    (var r (syscall 9 0 n prot flags fd offset))
+    (return (cast (ptr byte) r))
+))
+
+(var g_str_buf (call mmap 24))
+
+;; convert a number to string
+(def (str ptr byte) ((i int)) (do
+    ;; number to digits
+    (var s g_str_buf)
+    (loop i (do
+        (var d (+ 48 (% i 10)))
+        (set i (/ i 10))
+        (poke s (cast (byte) d))
+        (set s (+ 1 s))
+    ))
+    (poke s '\u0000')
+
+    ;; reverse the digits
+    (set s (- s 1))
+    (var l g_str_buf)
+    (loop (lt l s) (do
+        (var t (peek l))
+        (poke l (peek s))
+        (poke s t)
+        (set l (+ l 1))
+        (set s (- s 1))
+    ))
+    (return g_str_buf)
+))
+
+(def (strlen int) ((s ptr byte)) (do
+    (var start s)
+    (loop (peek s) (set s (+ 1 s)))
+    (return (- s start))
+))
+
+(def (print void) ((s ptr byte)) (do
+    (syscall 1 1 s (call strlen s))
+))
+(def (print void) ((i int)) (do
+    (call print (call str i))
+))
+
+;; a stupid way of fizzbuzzing.
+;; notice the mutual function calls.
+(def (fizz void) ((n int)) (do
+    (call number (- n 1))
+    (call print (? (not (% n 5)) "fizzbuzz\n" "fizz\n"))
+))
+(def (buzz void) ((n int)) (do
+    (call number (- n 1))
+    (call print "buzz\n")
+))
+(def (number void) ((n int)) (do
+    (if (le n 0) (return))
+    (if (not (% n 3)) (return (call fizz n)))
+    (if (not (% n 5)) (return (call buzz n)))
+    (call number (- n 1))
+    (call print n)
+    (call print "\n")
+))
+
+(call number 101)
+0

@@ -4,7 +4,6 @@
 import struct
 
 
-# TODO: mutual function calls
 # TODO: function pointers
 # TODO: pointer to variables
 # TODO: binop8, unop8
@@ -82,7 +81,10 @@ def parse_quotes(s, idx):
         else:
             if len(v) != 1:
                 raise Exception('bad char')
-            v = ['val8', ord(v)]
+            v = ord(v)
+            if not (0 <= v < 256):
+                raise ValueError('bad integer range')
+            v = ['val8', v]
         return end + 1, v
 
 
@@ -350,6 +352,8 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
         return ('void'), -1
     # function definition
     if node[0] == 'def' and len(node) == 4:
+        if not allow_var:
+            raise ValueError('function not allowed here')
         return pl_comp_func(fenv, node)
     # function call
     if node[0] == 'call' and len(node) >= 2:
@@ -459,6 +463,7 @@ def pl_comp_poke(fenv: Func, node):
 
 def pl_comp_main(fenv: Func, node):
     assert node[:3] == ['def', ['main', 'int'], []]
+    pl_scan_func(fenv, node)
     return pl_comp_func(fenv, node)
 
 
@@ -497,8 +502,23 @@ def pl_comp_call(fenv: Func, node):
 def pl_comp_scope(fenv: Func, node):
     fenv.scope_enter()
     tp, var = ('void',), -1
+
+    # separate kids by new variables
+    groups = [[]]
     for kid in node[1:]:
-        tp, var = pl_comp_expr(fenv, kid, allow_var=True)
+        groups[-1].append(kid)
+        if kid[0] == 'var':
+            groups.append([])
+
+    # Functions are visible before they are defined,
+    # as long as they don't cross a variable.
+    for g in groups:
+        for kid in g:
+            if kid[0] == 'def' and len(kid) == 4:
+                pl_scan_func(fenv, kid)
+        for kid in g:
+            tp, var = pl_comp_expr(fenv, kid, allow_var=True)
+
     fenv.scope_leave()
 
     if var >= fenv.stack:
@@ -620,8 +640,9 @@ def validate_type(tp):
         raise ValueError('unknown type')
 
 
-def pl_comp_func(fenv: Func, node):
-    _, (name, *rtype), args, body = node
+# make the function visible to the whole scope before its definition.
+def pl_scan_func(fenv: Func, node):
+    _, (name, *rtype), args, _ = node
     rtype = tuple(rtype)
     validate_type(rtype)
 
@@ -634,6 +655,14 @@ def pl_comp_func(fenv: Func, node):
     fenv = Func(fenv)
     fenv.rtype = rtype
     fenv.root.funcs.append(fenv)
+
+
+def pl_comp_func(fenv: Func, node):
+    _, (name, *_), args, body = node
+    arg_type_list = tuple(tuple(arg_type) for _, *arg_type in args)
+    key = (name, arg_type_list)
+    rtype, idx = fenv.scope.names[key]
+    fenv = fenv.root.funcs[idx]
 
     for arg_name, *arg_type in args:
         if not isinstance(arg_name, str):

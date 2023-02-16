@@ -10,7 +10,7 @@
         (var flags 0x22)        ; MAP_PRIVATE|MAP_ANONYMOUS
         (var fd -1)
         (var offset 0)
-        (var r (syscall 9 0x820000 heapsz prot flags fd offset))
+        (var r (syscall 9 0 heapsz prot flags fd offset))
         (set heap (cast (ptr byte) r))
     ))
     ; just move the heap pointer forward
