@@ -3,6 +3,7 @@
 An educational C-like toy programming language that compiles to x64 binary.
 
 The [compiler](pl_comp.py) is a self-contained Python program that weighs about 1000 LoC.
+It's part of an online [tutorial](https://build-your-own.org/b2a/p0_intro.html) on compilers and interpreters.
 
 ## Introduction
 
@@ -151,7 +152,7 @@ However, the language doesn't prevent you from building your own memory manageme
 
 ### 05. The stdlib
 
-The Pretty Laughable Language comes with the world's smallest standard library &mdash; no standard library &mdash; not even a `print` function.
+The Pretty Laughable Language comes with the world's smallest standard library &mdash; no standard library &mdash; not even a builtin `print` function.
 
 But with the ability to make arbitrary syscalls and peek-poke the memory, you can build your own stdlibs. Let's add the `print` function:
 
@@ -174,16 +175,25 @@ But with the ability to make arbitrary syscalls and peek-poke the memory, you ca
 
 ## Roadmaps
 
-Language Features:
+Language features:
 
 - [x] int, byte
 - [x] pointer
 - [x] syscall
-- [x] nested function
+- [x] if-then-else, loop
+- [x] function
+- [x] nested function, nonlocal variable
 - [ ] array
-- [ ] struct
+- [ ] struct, class
 - [ ] function pointer
+
+Explorations:
+
 - [ ] module or `include` directive
+- [ ] macro?
+- [ ] alternative syntax?
+- [ ] Windows
+- [ ] ARM64
 
 Optimizations:
 
