@@ -22,7 +22,7 @@ $ ./hello
 Hello world!
 ```
 
-The output is a tiny 64-bit Linux ELF binary.
+The output is a tiny freestanding x64 Linux ELF binary.
 ```sh
 $ file hello
 hello: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, no section header
@@ -170,8 +170,36 @@ But with the ability to make arbitrary syscalls and peek-poke the memory, you ca
 0
 ```
 
-[Here](samples/malloc_and_strings.txt) is a more complicated program you can play with.
+[Here](samples/malloc_and_strings.txt) is a more sophisticated program you can play with.
+
+## Roadmaps
+
+Language Features:
+
+- [x] int, byte
+- [x] pointer
+- [x] syscall
+- [x] nested function
+- [ ] array
+- [ ] struct
+- [ ] function pointer
+- [ ] module or `include` directive
+
+Optimizations:
+
+- [ ] register allocation
+- [ ] constants
+- [ ] tail call
+
+## The Design
+
+TBA
 
 ## The Implementation
 
-TODO
+To be added.
+
+But you can learn how to do it by reading the source code.
+
+Or you might like the online [tutorial](https://build-your-own.org/b2a/p0_intro.html) on building your own compiler,
+which is part of the WIP book "[5 Cool Coding Challenges from Beginner to Advanced](https://build-your-own.org/b2a/)".
