@@ -194,6 +194,7 @@ Explorations:
 - [ ] alternative syntax?
 - [ ] Windows
 - [ ] ARM64
+- [ ] WASM
 
 Optimizations:
 
@@ -202,6 +203,16 @@ Optimizations:
 - [ ] tail call
 
 ## The Design
+
+### 01. The Goal
+
+TBA
+
+### 02. The IR (Intermediate Representation)
+
+TBA
+
+### 03. Machine Code Generation
 
 TBA
 
