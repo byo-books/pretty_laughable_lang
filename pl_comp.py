@@ -146,7 +146,6 @@ class Func:
         self.code = []
         self.stack = 0
         self.labels = dict()
-        self.args_type = None
         self.rtype = None
         # root
         self.funcs = []
