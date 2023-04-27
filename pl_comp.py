@@ -287,15 +287,20 @@ def pl_comp_binop(fenv: Func, node):
 def pl_comp_unop(fenv: Func, node):
     op, arg = node
     t1, a1 = pl_comp_expr(fenv, arg)
-    if op == '-' and t1[0] not in ('int', 'byte'):
-        raise ValueError('bad unop types')
-    if op == 'not' and t1[0] not in ('int', 'byte', 'ptr'):
-        raise ValueError('bad unop types')
+
     suffix = ''
-    if t1 == ('byte',):
-        suffix = '8'
+    rtype = t1
+    if op == '-':
+        if t1[0] not in ('int', 'byte'):
+            raise ValueError('bad unop types')
+        if t1 == ('byte',):
+            suffix = '8'
+    elif op == 'not':
+        if t1[0] not in ('int', 'byte', 'ptr'):
+            raise ValueError('bad unop types')
+        rtype = 'int'   # boolean
     fenv.code.append(('unop' + suffix, op, a1, fenv.stack))
-    return t1, fenv.tmp()
+    return rtype, fenv.tmp()
 
 
 def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
