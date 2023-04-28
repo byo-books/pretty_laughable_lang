@@ -160,7 +160,7 @@ class Func:
 
     # enter a new scope
     def scope_enter(self):
-        self.scope = Scope(self.scope)
+        self.scope = Scope(self.scope)  # new list head
         self.scope.save = self.stack
 
     # exit a scope and revert the stack
@@ -186,7 +186,7 @@ class Func:
             raise ValueError('undefined name')
         return self.prev.get_var(name)
 
-    # allocate a temporary variable and return its index
+    # allocate a variable on the stack top and return its index
     def tmp(self):
         dst = self.stack
         self.stack += 1
@@ -211,9 +211,11 @@ class Scope:
         self.prev = prev
         # the number of local variables seen
         self.nlocal = 0
-        # variable names to (type, index) tuples
+        # Variable names to (type, index) tuples.
+        # For functions, the key includes argument types
+        # and the index is the index of `Func.funcs`.
         self.names = dict()
-        # the labels of the nearest loop
+        # the label IDs of the nearest loop
         self.loop_start = prev.loop_start if prev else -1
         self.loop_end = prev.loop_end if prev else -1
 
@@ -279,13 +281,16 @@ def pl_comp_const(fenv: Func, node):
 def pl_comp_binop(fenv: Func, node):
     op, lhs, rhs = node
 
+    # compile subexpressions
+    # FIXME: boolean short circuit
     save = fenv.stack
     t1, a1 = pl_comp_expr_tmp(fenv, lhs)
     t2, a2 = pl_comp_expr_tmp(fenv, rhs)
-    fenv.stack = save
+    fenv.stack = save   # discard temporaries
 
     # pointers
     if op == '+' and (t1[0], t2[0]) == ('int', 'ptr'):
+        # allows both `ptr + offset` and `offset + ptr`
         t1, a1, t2, a2 = t2, a2, t1, a1
     if op in '+-' and (t1[0], t2[0]) == ('ptr', 'int'):
         scale = 8
@@ -293,8 +298,10 @@ def pl_comp_binop(fenv: Func, node):
             scale = 1
         if op == '-':
             scale = -scale
-        fenv.code.append(('lea', a1, a2, scale, fenv.stack))
-        return t1, fenv.tmp()
+        # output to a new temporary
+        dst = fenv.tmp()
+        fenv.code.append(('lea', a1, a2, scale, dst))
+        return t1, dst
 
     # check types
     # TODO: allow different types
@@ -310,9 +317,10 @@ def pl_comp_binop(fenv: Func, node):
     suffix = ''
     if t1 == t2 and t1 == ('byte',):
         suffix = '8'
-    fenv.code.append(('binop' + suffix, op, a1, a2, fenv.stack))
-    return rtype, fenv.tmp()
-    # FIXME: boolean short circuit
+    # output to a new temporary
+    dst = fenv.tmp()
+    fenv.code.append(('binop' + suffix, op, a1, a2, dst))
+    return rtype, dst
 
 
 def pl_comp_unop(fenv: Func, node):
@@ -330,8 +338,9 @@ def pl_comp_unop(fenv: Func, node):
         if t1[0] not in ('int', 'byte', 'ptr'):
             raise ValueError('bad unop types')
         rtype = ('int',)    # boolean
-    fenv.code.append(('unop' + suffix, op, a1, fenv.stack))
-    return rtype, fenv.tmp()
+    dst = fenv.tmp()
+    fenv.code.append(('unop' + suffix, op, a1, dst))
+    return rtype, dst
 
 
 # The actual implementation of `pl_comp_expr`.
@@ -468,7 +477,7 @@ def pl_comp_syscall(fenv: Func, node):
     fenv.stack = save
 
     fenv.code.append(('syscall', fenv.stack, num, *sys_vars))
-    return (('int',), fenv.tmp())
+    return ('int',), fenv.tmp()
 
 
 def pl_comp_peek(fenv: Func, node):
@@ -554,14 +563,17 @@ def pl_comp_scope(fenv: Func, node):
     # Functions are visible before they are defined,
     # as long as they don't cross a variable.
     for g in groups:
+        # preprocessing for functions
         for kid in g:
             if kid[0] == 'def' and len(kid) == 4:
                 pl_scan_func(fenv, kid)
+        # compile subexpressions
         for kid in g:
             tp, var = pl_comp_expr(fenv, kid, allow_var=True, allow_func=True)
 
     fenv.scope_leave()
 
+    # the return is either a local variable or a new temporary
     if var >= fenv.stack:
         var = move_to(fenv, var, fenv.tmp())
     return tp, var
@@ -582,6 +594,7 @@ def pl_comp_newvar(fenv: Func, node):
         raise ValueError('bad variable init type')
 
     fenv.add_var(name, tp)
+    # store the initial value into the new variable
     return tp, move_to(fenv, var, fenv.tmp())
 
 
@@ -676,11 +689,12 @@ def validate_type(tp):
         validate_type(body)
     elif head in ('void', 'int', 'byte'):
         if body:
-            raise ValueError('bad scaler type')
+            raise ValueError('bad scalar type')
     else:
         raise ValueError('unknown type')
 
 
+# function preprocessing:
 # make the function visible to the whole scope before its definition.
 def pl_scan_func(fenv: Func, node):
     _, (name, *rtype), args, _ = node
@@ -688,23 +702,25 @@ def pl_scan_func(fenv: Func, node):
     validate_type(rtype)
 
     arg_type_list = tuple(tuple(arg_type) for _, *arg_type in args)
-    key = (name, arg_type_list)
+    key = (name, arg_type_list) # allows overloading by argument types
     if key in fenv.scope.names:
         raise ValueError('duplicated function')
 
     fenv.scope.names[key] = (rtype, len(fenv.funcs))
-    fenv = Func(fenv)
+    fenv = Func(fenv)   # the new function
     fenv.rtype = rtype
     fenv.funcs.append(fenv)
 
 
+# actually compile the function definition
 def pl_comp_func(fenv: Func, node):
     _, (name, *_), args, body = node
     arg_type_list = tuple(tuple(arg_type) for _, *arg_type in args)
     key = (name, arg_type_list)
     rtype, idx = fenv.scope.names[key]
-    fenv = fenv.funcs[idx]
+    fenv = fenv.funcs[idx]  # the target function created by `pl_scan_func`
 
+    # treat arguments as local variables
     for arg_name, *arg_type in args:
         if not isinstance(arg_name, str):
             raise ValueError('bad argument name')
@@ -715,14 +731,13 @@ def pl_comp_func(fenv: Func, node):
         fenv.add_var(arg_name, arg_type)
     fenv.stack = len(args)
 
+    # compile the function body
     body_type, var = pl_comp_expr(fenv, body)
     if rtype != ('void',) and rtype != body_type:
         raise ValueError('bad body type')
     if rtype == ('void',):
         var = -1
     fenv.code.append(('ret', var))
-
-    fenv = fenv.prev
     return ('void',), -1
 
 
