@@ -136,36 +136,50 @@ def pl_parse_main(s):
     return pl_parse('(def (main int) () (do ' + s + '))')
 
 
+# the compiler state for functions
 class Func:
     def __init__(self, prev):
+        # the parent function (linked list)
         self.prev = prev
+        # the outermost function: the main function
         self.root = prev.root if prev else self
+        # nested function level, starts with 0
         self.level = (prev.level + 1) if prev else 0
+        # the name scope
         self.scope = Scope(None)
+        # current number of local variable in the stack (non-temporary)
         self.nvar = 0
+        # the output: a list of instructions
         self.code = []
+        # current number of variables (both locals and temporaries)
         self.stack = 0
+        # label IDs to instruction locations
         self.labels = dict()
+        # the return type of this function
         self.rtype = None
-        # root
+        # a collection of all functions (only for the root function)
         self.funcs = []
 
+    # enter a new scope
     def scope_enter(self):
         self.scope = Scope(self.scope)
         self.scope.save = self.stack
 
+    # exit a scope and revert the stack
     def scope_leave(self):
         self.stack = self.scope.save
         self.nvar -= self.scope.nlocal
         self.scope = self.scope.prev
 
+    # add a new variable to the current scope
     def add_var(self, name, tp):
         if name in self.scope.names:
             raise ValueError('duplicated name')
-        self.scope.names[name] = (tp, self.nvar)
+        self.scope.names[name] = (tp, self.nvar)    # type, index
         self.scope.nlocal += 1
         self.nvar += 1
 
+    # lookup a name. returns a tuple of (function_level, type, index)
     def get_var(self, name):
         tp, var = scope_get_var(self.scope, name)
         if var >= 0:
@@ -174,50 +188,68 @@ class Func:
             raise ValueError('undefined name')
         return self.prev.get_var(name)
 
+    # allocate a temporary variable and return its index
     def tmp(self):
         dst = self.stack
         self.stack += 1
         return dst
 
+    # allocate a new label ID
     def new_label(self):
         l = len(self.labels)
         self.labels[l] = None
         return l
 
+    # associate the label ID to the current location
     def set_label(self, l):
         assert l in self.labels
         self.labels[l] = len(self.code)
 
 
+# the name scope linked list
 class Scope:
     def __init__(self, prev):
+        # the parent scope
         self.prev = prev
+        # the number of local variables seen
         self.nlocal = 0
+        # variable names to (type, index) tuples
         self.names = dict()
+        # the labels of the nearest loop
         self.loop_start = prev.loop_start if prev else -1
         self.loop_end = prev.loop_end if prev else -1
 
 
+# lookup a name from a function scope. returns a (type, index) tuple.
 def scope_get_var(scope, name):
-    while scope:
+    while scope:    # linked list
         if name in scope.names:
             return scope.names[name]
         scope = scope.prev
-    return None, -1
+    return None, -1 # not found
 
 
-def pl_comp_expr(fenv: Func, node, *, allow_var=False):
+# the entry point of compilation. returns a (type, index) tuple
+def pl_comp_expr(fenv: Func, node, *, allow_var=False, allow_func=False):
     if allow_var:
         assert fenv.stack == fenv.nvar
     save = fenv.stack
 
-    tp, var = pl_comp_expr_tmp(fenv, node, allow_var=allow_var)
+    # the actual implementation
+    tp, var = pl_comp_expr_tmp(
+        fenv, node, allow_var=allow_var, allow_func=allow_func)
     assert var < fenv.stack
 
+    # Discard temporaries from the above compilation:
     if allow_var:
+        # The stack is either local variables only
         fenv.stack = fenv.nvar
     else:
+        # or reverts to its previous state.
         fenv.stack = save
+
+    # The result is either a temporary stored at the top of the stack
+    # or a local variable.
     assert var <= fenv.stack
     return tp, var
 
@@ -303,7 +335,10 @@ def pl_comp_unop(fenv: Func, node):
     return rtype, fenv.tmp()
 
 
-def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
+# The actual implementation of `pl_comp_expr`.
+# The difference is that `pl_comp_expr_tmp` preserves temporaries
+# while all other `pl_comp_*` functions discard temporaries.
+def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
     # read a variable
     if not isinstance(node, list):
         return pl_comp_getvar(fenv, node)
@@ -334,6 +369,8 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
         return pl_comp_scope(fenv, node)
     # new variable
     if node[0] == 'var' and len(node) == 3:
+        # Variable declarations are allowed only as
+        # children of scopes and conditions.
         if not allow_var:
             raise ValueError('variable declaration not allowed here')
         return pl_comp_newvar(fenv, node)
@@ -356,7 +393,8 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
         return ('void'), -1
     # function definition
     if node[0] == 'def' and len(node) == 4:
-        if not allow_var:
+        # Function declarations are allowed only as children of scopes.
+        if not allow_func:
             raise ValueError('function not allowed here')
         return pl_comp_func(fenv, node)
     # function call
@@ -521,7 +559,7 @@ def pl_comp_scope(fenv: Func, node):
             if kid[0] == 'def' and len(kid) == 4:
                 pl_scan_func(fenv, kid)
         for kid in g:
-            tp, var = pl_comp_expr(fenv, kid, allow_var=True)
+            tp, var = pl_comp_expr(fenv, kid, allow_var=True, allow_func=True)
 
     fenv.scope_leave()
 
