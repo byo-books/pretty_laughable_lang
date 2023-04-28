@@ -141,8 +141,6 @@ class Func:
     def __init__(self, prev):
         # the parent function (linked list)
         self.prev = prev
-        # the outermost function: the main function
-        self.root = prev.root if prev else self
         # nested function level, starts with 0
         self.level = (prev.level + 1) if prev else 0
         # the name scope
@@ -157,8 +155,8 @@ class Func:
         self.labels = dict()
         # the return type of this function
         self.rtype = None
-        # a collection of all functions (only for the root function)
-        self.funcs = []
+        # a list of all functions (shared by all `Func` instances)
+        self.funcs = prev.funcs if prev else []
 
     # enter a new scope
     def scope_enter(self):
@@ -531,7 +529,7 @@ def pl_comp_call(fenv: Func, node):
 
     key = (name, tuple(call_types))
     _, _, idx = fenv.get_var(key)
-    func = fenv.root.funcs[idx]
+    func = fenv.funcs[idx]
 
     fenv.stack -= len(args)
     fenv.code.append(('call', idx, fenv.stack, fenv.level, func.level))
@@ -693,10 +691,10 @@ def pl_scan_func(fenv: Func, node):
     if key in fenv.scope.names:
         raise ValueError('duplicated function')
 
-    fenv.scope.names[key] = (rtype, len(fenv.root.funcs))
+    fenv.scope.names[key] = (rtype, len(fenv.funcs))
     fenv = Func(fenv)
     fenv.rtype = rtype
-    fenv.root.funcs.append(fenv)
+    fenv.funcs.append(fenv)
 
 
 def pl_comp_func(fenv: Func, node):
@@ -704,7 +702,7 @@ def pl_comp_func(fenv: Func, node):
     arg_type_list = tuple(tuple(arg_type) for _, *arg_type in args)
     key = (name, arg_type_list)
     rtype, idx = fenv.scope.names[key]
-    fenv = fenv.root.funcs[idx]
+    fenv = fenv.funcs[idx]
 
     for arg_name, *arg_type in args:
         if not isinstance(arg_name, str):
