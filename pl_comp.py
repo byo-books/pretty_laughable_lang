@@ -173,7 +173,7 @@ class Func:
     def add_var(self, name, tp):
         if name in self.scope.names:
             raise ValueError('duplicated name')
-        self.scope.names[name] = (tp, self.nvar)    # type, index
+        self.scope.names[name] = (tp, self.nvar)    # (type, index)
         self.scope.nlocal += 1
         self.nvar += 1
 
@@ -218,7 +218,7 @@ class Scope:
         self.loop_end = prev.loop_end if prev else -1
 
 
-# lookup a name from a function scope. returns a (type, index) tuple.
+# lookup a name from a scope. returns a (type, index) tuple.
 def scope_get_var(scope, name):
     while scope:    # linked list
         if name in scope.names:
@@ -227,7 +227,8 @@ def scope_get_var(scope, name):
     return None, -1 # not found
 
 
-# the entry point of compilation. returns a (type, index) tuple
+# the entry point of compilation.
+# returns a (type, index) tuple, the type may be `('void',)`.
 def pl_comp_expr(fenv: Func, node, *, allow_var=False, allow_func=False):
     if allow_var:
         assert fenv.stack == fenv.nvar
@@ -328,7 +329,7 @@ def pl_comp_unop(fenv: Func, node):
     elif op == 'not':
         if t1[0] not in ('int', 'byte', 'ptr'):
             raise ValueError('bad unop types')
-        rtype = 'int'   # boolean
+        rtype = ('int',)    # boolean
     fenv.code.append(('unop' + suffix, op, a1, fenv.stack))
     return rtype, fenv.tmp()
 
