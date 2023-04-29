@@ -230,7 +230,7 @@ def scope_get_var(scope, name):
 
 
 # the entry point of compilation.
-# returns a (type, index) tuple, the type may be `('void',)`.
+# returns a (type, index) tuple. the index is -1 if the type is `('void',)`
 def pl_comp_expr(fenv: Func, node, *, allow_var=False, allow_func=False):
     if allow_var:
         assert fenv.stack == fenv.nvar
@@ -355,8 +355,7 @@ def pl_comp_unop(fenv: Func, node):
 
 
 # The actual implementation of `pl_comp_expr`.
-# The difference is that `pl_comp_expr_tmp` preserves temporaries
-# while all other `pl_comp_*` functions discard temporaries.
+# This preserves temporaries while `pl_comp` discards temporaries.
 def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
     # read a variable
     if not isinstance(node, list):
@@ -393,7 +392,7 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
         if not allow_var:
             raise ValueError('variable declaration not allowed here')
         return pl_comp_newvar(fenv, node)
-    # write a variable
+    # update a variable
     if node[0] == 'set' and len(node) == 3:
         return pl_comp_setvar(fenv, node)
     # loop
@@ -601,7 +600,7 @@ def pl_comp_newvar(fenv: Func, node):
     _, name, kid = node
 
     tp, var = pl_comp_expr(fenv, kid)
-    if var < 0:
+    if var < 0: # void
         raise ValueError('bad variable init type')
 
     fenv.add_var(name, tp)
@@ -612,11 +611,8 @@ def pl_comp_newvar(fenv: Func, node):
 def pl_comp_setvar(fenv: Func, node):
     _, name, kid = node
 
-    tp, var = pl_comp_expr(fenv, kid)
-    if var < 0:
-        raise ValueError('bad variable set type')
-
     flevel, dst_tp, dst = fenv.get_var(name)
+    tp, var = pl_comp_expr(fenv, kid)
     if dst_tp != tp:
         raise ValueError('bad variable set type')
 
@@ -674,7 +670,7 @@ def pl_comp_loop(fenv: Func, node):
     fenv.set_label(fenv.scope.loop_start)
     # cond
     _, var = pl_comp_expr(fenv, cond, allow_var=True)
-    if var < 0:
+    if var < 0: # void
         raise ValueError('bad condition type')
     fenv.code.append(('jmpf', var, fenv.scope.loop_end))
     # body
