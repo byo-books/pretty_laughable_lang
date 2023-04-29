@@ -290,9 +290,10 @@ def pl_comp_binop(fenv: Func, node):
 
     # pointers
     if op == '+' and (t1[0], t2[0]) == ('int', 'ptr'):
-        # allows both `ptr + offset` and `offset + ptr`
+        # rewrite `offset + ptr` into `ptr + offset`
         t1, a1, t2, a2 = t2, a2, t1, a1
     if op in '+-' and (t1[0], t2[0]) == ('ptr', 'int'):
+        # ptr + offset
         scale = 8
         if t1 == ('ptr', 'byte'):
             scale = 1
@@ -302,17 +303,27 @@ def pl_comp_binop(fenv: Func, node):
         dst = fenv.tmp()
         fenv.code.append(('lea', a1, a2, scale, dst))
         return t1, dst
+    if op == '-' and (t1[0], t2[0]) == ('ptr', 'ptr'):
+        # ptr - ptr
+        if t1 != t2:
+            raise ValueError('comparison of different pointer types')
+        if t1 != ('ptr', 'byte'):
+            # TODO: ptr int
+            raise NotImplementedError
+        dst = fenv.tmp()
+        fenv.code.append(('binop', '-', a1, a2, dst))
+        return ('int',), dst
 
     # check types
     # TODO: allow different types
-    cmp = {'eq', 'ge', 'gt', 'le', 'lt', 'ne', '-'}
+    cmp = {'eq', 'ge', 'gt', 'le', 'lt', 'ne'}
     ints = (t1 == t2 and t1[0] in ('int', 'byte'))
     ptr_cmp = (t1 == t2 and t1[0] == 'ptr' and op in cmp)
     if not (ints or ptr_cmp):
         raise ValueError('bad binop types')
     rtype = t1
-    if ptr_cmp and op == '-':
-        rtype = ('int',)
+    if op in cmp:
+        rtype = ('int',)    # boolean
 
     suffix = ''
     if t1 == t2 and t1 == ('byte',):
