@@ -169,13 +169,19 @@ class Func:
         self.nvar -= self.scope.nlocal
         self.scope = self.scope.prev
 
-    # add a new variable to the current scope
+    # allocate a new local variable in the current scope
     def add_var(self, name, tp):
+        # add it to the map
         if name in self.scope.names:
             raise ValueError('duplicated name')
         self.scope.names[name] = (tp, self.nvar)    # (type, index)
         self.scope.nlocal += 1
+        # assign the index
+        assert self.stack == self.nvar
+        dst = self.stack
+        self.stack += 1
         self.nvar += 1
+        return dst
 
     # lookup a name. returns a tuple of (function_level, type, index)
     def get_var(self, name):
@@ -186,7 +192,7 @@ class Func:
             raise ValueError('undefined name')
         return self.prev.get_var(name)
 
-    # allocate a variable on the stack top and return its index
+    # allocate a temporary variable on the stack top and return its index
     def tmp(self):
         dst = self.stack
         self.stack += 1
@@ -596,16 +602,14 @@ def move_to(fenv, var, dst):
 
 
 def pl_comp_newvar(fenv: Func, node):
-    assert fenv.stack == fenv.nvar
     _, name, kid = node
-
+    # compile the initialization expression
     tp, var = pl_comp_expr(fenv, kid)
     if var < 0: # void
         raise ValueError('bad variable init type')
-
-    fenv.add_var(name, tp)
-    # store the initial value into the new variable
-    return tp, move_to(fenv, var, fenv.tmp())
+    # store the initialization value into the new variable
+    dst = fenv.add_var(name, tp)
+    return tp, move_to(fenv, var, dst)
 
 
 def pl_comp_setvar(fenv: Func, node):
@@ -736,7 +740,7 @@ def pl_comp_func(fenv: Func, node):
         if arg_type == ('void',):
             raise ValueError('bad argument type')
         fenv.add_var(arg_name, arg_type)
-    fenv.stack = len(args)
+    assert fenv.stack == len(args)
 
     # compile the function body
     body_type, var = pl_comp_expr(fenv, body)
