@@ -145,10 +145,10 @@ class Func:
         self.level = (prev.level + 1) if prev else 0
         # the name scope
         self.scope = Scope(None)
-        # current number of local variable in the stack (non-temporary)
-        self.nvar = 0
         # the output: a list of instructions
         self.code = []
+        # current number of local variable in the stack (non-temporary)
+        self.nvar = 0
         # current number of variables (both locals and temporaries)
         self.stack = 0
         # label IDs to instruction locations
