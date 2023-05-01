@@ -152,7 +152,7 @@ class Func:
         # current number of variables (both locals and temporaries)
         self.stack = 0
         # label IDs to instruction locations
-        self.labels = dict()
+        self.labels = []
         # the return type of this function
         self.rtype = None
         # a list of all functions (shared by all `Func` instances)
@@ -201,12 +201,12 @@ class Func:
     # allocate a new label ID
     def new_label(self):
         l = len(self.labels)
-        self.labels[l] = None
+        self.labels.append(None)    # filled later
         return l
 
     # associate the label ID to the current location
     def set_label(self, l):
-        assert l in self.labels
+        assert l < len(self.labels)
         self.labels[l] = len(self.code)
 
 
@@ -385,9 +385,6 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
     # unary operators
     if len(node) == 2 and node[0] in {'-', 'not'}:
         return pl_comp_unop(fenv, node)
-    # conditional
-    if len(node) in (3, 4) and node[0] in ('?', 'if'):
-        return pl_comp_cond(fenv, node)
     # new scope
     if node[0] in ('do', 'then', 'else'):
         return pl_comp_scope(fenv, node)
@@ -401,6 +398,9 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
     # update a variable
     if node[0] == 'set' and len(node) == 3:
         return pl_comp_setvar(fenv, node)
+    # conditional
+    if len(node) in (3, 4) and node[0] in ('?', 'if'):
+        return pl_comp_cond(fenv, node)
     # loop
     if node[0] == 'loop' and len(node) == 3:
         return pl_comp_loop(fenv, node)
@@ -631,37 +631,39 @@ def pl_comp_setvar(fenv: Func, node):
 
 def pl_comp_cond(fenv: Func, node):
     _, cond, yes, *no = node
-    l_true = fenv.new_label()
-    l_false = fenv.new_label()
-    fenv.scope_enter()
+    l_true = fenv.new_label()   # then
+    l_false = fenv.new_label()  # else
+    fenv.scope_enter()  # a variable declaration is allowed on the condition
 
-    # cond
+    # the condition expression
     tp, var = pl_comp_expr(fenv, cond, allow_var=True)
     if tp == ('void',):
         raise ValueError('expect boolean condition')
-    fenv.code.append(('jmpf', var, l_false))
+    fenv.code.append(('jmpf', var, l_false))    # go to `else` if false
 
-    # yes
+    # then
     t1, a1 = pl_comp_expr(fenv, yes)
     if a1 >= 0:
+        # Both `then` and `else` goes to the same variable,
+        # thus a temporary is needed.
         move_to(fenv, a1, fenv.stack)
 
-    # no
+    # else, optional
     t2, a2 = ('void',), -1
     if no:
-        fenv.code.append(('jmp', l_true))
+        fenv.code.append(('jmp', l_true))   # skip `else` after `then`
     fenv.set_label(l_false)
     if no:
         t2, a2 = pl_comp_expr(fenv, no[0])
         if a2 >= 0:
-            move_to(fenv, a2, fenv.stack)
+            move_to(fenv, a2, fenv.stack)   # the same variable for `then`
     fenv.set_label(l_true)
 
     fenv.scope_leave()
     if a1 < 0 or a2 < 0 or t1 != t2:
-        return ('void',), -1
+        return ('void',), -1    # different types, no return value
     else:
-        return t1, fenv.tmp()
+        return t1, fenv.tmp()   # allocate the temporary for the result
 
 
 def pl_comp_loop(fenv: Func, node):
@@ -670,7 +672,7 @@ def pl_comp_loop(fenv: Func, node):
     fenv.scope.loop_end = fenv.new_label()
 
     # enter
-    fenv.scope_enter()
+    fenv.scope_enter()  # allow_var=True
     fenv.set_label(fenv.scope.loop_start)
     # cond
     _, var = pl_comp_expr(fenv, cond, allow_var=True)
@@ -1299,7 +1301,7 @@ def ir_dump(root: Func):
     for i, func in enumerate(root.funcs):
         out.append(f'func{i}:')
         pos2labels = dict()
-        for label, pos in func.labels.items():
+        for label, pos in enumerate(func.labels):
             pos2labels.setdefault(pos, []).append(label)
         for pos, instr in enumerate(func.code):
             for label in pos2labels.get(pos, []):
