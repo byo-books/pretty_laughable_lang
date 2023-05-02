@@ -406,12 +406,12 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
     if node[0] == 'loop' and len(node) == 3:
         return pl_comp_loop(fenv, node)
     # break & continue
-    if node[0] == 'break' and len(node) == 1:
+    if node == ['break']:
         if fenv.scope.loop_end < 0:
             raise ValueError('`break` outside a loop')
         fenv.code.append(('jmp', fenv.scope.loop_end))
         return ('void'), -1
-    if node[0] == 'continue' and len(node) == 1:
+    if node == ['continue']:
         if fenv.scope.loop_start < 0:
             raise ValueError('`continue` outside a loop')
         fenv.code.append(('jmp', fenv.scope.loop_start))
