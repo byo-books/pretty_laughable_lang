@@ -238,14 +238,13 @@ def scope_get_var(scope, name):
 
 # the entry point of compilation.
 # returns a (type, index) tuple. the index is -1 if the type is `('void',)`
-def pl_comp_expr(fenv: Func, node, *, allow_var=False, allow_func=False):
+def pl_comp_expr(fenv: Func, node, *, allow_var=False):
     if allow_var:
         assert fenv.stack == fenv.nvar
     save = fenv.stack
 
     # the actual implementation
-    tp, var = pl_comp_expr_tmp(
-        fenv, node, allow_var=allow_var, allow_func=allow_func)
+    tp, var = pl_comp_expr_tmp(fenv, node, allow_var=allow_var)
     assert var < fenv.stack
 
     # Discard temporaries from the above compilation:
@@ -363,7 +362,7 @@ def pl_comp_unop(fenv: Func, node):
 
 # The actual implementation of `pl_comp_expr`.
 # This preserves temporaries while `pl_comp` discards temporaries.
-def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
+def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
     # read a variable
     if not isinstance(node, list):
         return pl_comp_getvar(fenv, node)
@@ -416,12 +415,6 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
             raise ValueError('`continue` outside a loop')
         fenv.code.append(('jmp', fenv.scope.loop_start))
         return ('void'), -1
-    # function definition
-    if node[0] == 'def' and len(node) == 4:
-        # Function declarations are allowed only as children of scopes.
-        if not allow_func:
-            raise ValueError('function not allowed here')
-        return pl_comp_func(fenv, node)
     # function call
     if node[0] == 'call' and len(node) >= 2:
         return pl_comp_call(fenv, node)
@@ -528,8 +521,8 @@ def pl_comp_poke(fenv: Func, node):
 
 def pl_comp_main(fenv: Func, node):
     assert node[:3] == ['def', ['main', 'int'], []]
-    pl_scan_func(fenv, node)
-    return pl_comp_func(fenv, node)
+    func = pl_scan_func(fenv, node)
+    return pl_comp_func(func, node)
 
 
 def pl_comp_return(fenv: Func, node):
@@ -570,7 +563,7 @@ def pl_comp_scope(fenv: Func, node):
     fenv.scope_enter()
     tp, var = ('void',), -1
 
-    # separate kids by new variables
+    # split kids into groups separated by variable declarations
     groups = [[]]
     for kid in node[1:]:
         groups[-1].append(kid)
@@ -578,15 +571,21 @@ def pl_comp_scope(fenv: Func, node):
             groups.append([])
 
     # Functions are visible before they are defined,
-    # as long as they don't cross a variable.
+    # as long as they don't cross a variable declaration.
+    # This allows adjacent functions to call each other mutually.
     for g in groups:
-        # preprocessing for functions
-        for kid in g:
-            if kid[0] == 'def' and len(kid) == 4:
-                pl_scan_func(fenv, kid)
+        # preprocess functions
+        funcs = [
+            pl_scan_func(fenv, kid)
+            for kid in g if kid[0] == 'def' and len(kid) == 4
+        ]
         # compile subexpressions
         for kid in g:
-            tp, var = pl_comp_expr(fenv, kid, allow_var=True, allow_func=True)
+            if kid[0] == 'def' and len(kid) == 4:
+                target, funcs = funcs[0], funcs[1:]
+                tp, var = pl_comp_func(target, kid)
+            else:
+                tp, var = pl_comp_expr(fenv, kid, allow_var=True)
 
     fenv.scope_leave()
 
@@ -714,24 +713,24 @@ def pl_scan_func(fenv: Func, node):
     _, (name, *rtype), args, _ = node
     rtype = validate_type(rtype)
 
+    # add the (name, arg-types) pair to the map
     arg_type_list = tuple(validate_type(arg_type) for _, *arg_type in args)
     key = (name, arg_type_list) # allows overloading by argument types
     if key in fenv.scope.names:
         raise ValueError('duplicated function')
-
     fenv.scope.names[key] = (rtype, len(fenv.funcs))
-    fenv = Func(fenv)   # the new function
-    fenv.rtype = rtype
-    fenv.funcs.append(fenv)
+
+    # the new function
+    func = Func(fenv)
+    func.rtype = rtype
+    fenv.funcs.append(func)
+    return func
 
 
-# actually compile the function definition
+# actually compile the function definition.
+# note that the `fenv` argument is the target function!
 def pl_comp_func(fenv: Func, node):
-    _, (name, *_), args, body = node
-    arg_type_list = tuple(validate_type(arg_type) for _, *arg_type in args)
-    key = (name, arg_type_list)
-    rtype, idx = fenv.scope.names[key]
-    fenv = fenv.funcs[idx]  # the target function created by `pl_scan_func`
+    _, _, args, body = node
 
     # treat arguments as local variables
     for arg_name, *arg_type in args:
@@ -745,9 +744,9 @@ def pl_comp_func(fenv: Func, node):
 
     # compile the function body
     body_type, var = pl_comp_expr(fenv, body)
-    if rtype != ('void',) and rtype != body_type:
+    if fenv.rtype != ('void',) and fenv.rtype != body_type:
         raise ValueError('bad body type')
-    if rtype == ('void',):
+    if fenv.rtype == ('void',):
         var = -1
     fenv.code.append(('ret', var))  # the implicit return
     return ('void',), -1
