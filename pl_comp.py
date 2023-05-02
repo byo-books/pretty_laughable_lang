@@ -144,6 +144,10 @@ class Func:
         self.prev = prev
         # nested function level, starts with 0
         self.level = (prev.level + 1) if prev else 0
+        # the return type of this function
+        self.rtype = None
+        # a list of all functions (shared by all `Func` instances)
+        self.funcs = prev.funcs if prev else []
         # the name scope
         self.scope = Scope(None)
         # the output: a list of instructions
@@ -154,10 +158,6 @@ class Func:
         self.stack = 0
         # label IDs to instruction locations
         self.labels = []
-        # the return type of this function
-        self.rtype = None
-        # a list of all functions (shared by all `Func` instances)
-        self.funcs = prev.funcs if prev else []
 
     # enter a new scope
     def scope_enter(self):
@@ -546,21 +546,23 @@ def pl_comp_return(fenv: Func, node):
 def pl_comp_call(fenv: Func, node):
     _, name, *args = node
 
-    call_types = []
+    # compile arguments
+    arg_types = []
     for kid in args:
-        arg_tp, var = pl_comp_expr(fenv, kid)
-        call_types.append(arg_tp)
-        move_to(fenv, var, fenv.tmp())
+        tp, var = pl_comp_expr(fenv, kid)
+        arg_types.append(tp)
+        move_to(fenv, var, fenv.tmp())  # stored continuously
+    fenv.stack -= len(args) # points to the first argument
 
-    key = (name, tuple(call_types))
+    # look up the target `Func`
+    key = (name, tuple(arg_types))
     _, _, idx = fenv.get_var(key)
     func = fenv.funcs[idx]
 
-    fenv.stack -= len(args)
     fenv.code.append(('call', idx, fenv.stack, fenv.level, func.level))
     dst = -1
     if func.rtype != ('void',):
-        dst = fenv.tmp()
+        dst = fenv.tmp()    # the return value on the stack top
     return func.rtype, dst
 
 
