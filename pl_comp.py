@@ -431,8 +431,7 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
         return pl_comp_return(fenv, node)
     # null pointer
     if node[0] == 'ptr':
-        tp = tuple(node)
-        validate_type(tp)
+        tp = validate_type(node)
         dst = fenv.tmp()
         fenv.code.append(('const', 0, dst))
         return tp, dst
@@ -454,8 +453,7 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False, allow_func=False):
 
 def pl_comp_cast(fenv: Func, node):
     _, tp, value = node
-    tp = tuple(tp)
-    validate_type(tp)
+    tp = validate_type(tp)
     val_tp, var = pl_comp_expr_tmp(fenv, value)
 
     # to, from
@@ -690,31 +688,30 @@ def pl_comp_loop(fenv: Func, node):
     return ('void',), -1
 
 
+# check for accepted types. returns a tuple.
 def validate_type(tp):
-    assert isinstance(tp, tuple)
     if len(tp) == 0:
         raise ValueError('type missing')
     head, *body = tp
-    body = tuple(body)
     if head == 'ptr':
-        if not body or body == ('void',):
+        body = validate_type(body)
+        if body == ('void',):
             raise ValueError('bad pointer element')
-        validate_type(body)
     elif head in ('void', 'int', 'byte'):
         if body:
             raise ValueError('bad scalar type')
     else:
         raise ValueError('unknown type')
+    return (head, *body)
 
 
 # function preprocessing:
 # make the function visible to the whole scope before its definition.
 def pl_scan_func(fenv: Func, node):
     _, (name, *rtype), args, _ = node
-    rtype = tuple(rtype)
-    validate_type(rtype)
+    rtype = validate_type(rtype)
 
-    arg_type_list = tuple(tuple(arg_type) for _, *arg_type in args)
+    arg_type_list = tuple(validate_type(arg_type) for _, *arg_type in args)
     key = (name, arg_type_list) # allows overloading by argument types
     if key in fenv.scope.names:
         raise ValueError('duplicated function')
@@ -728,7 +725,7 @@ def pl_scan_func(fenv: Func, node):
 # actually compile the function definition
 def pl_comp_func(fenv: Func, node):
     _, (name, *_), args, body = node
-    arg_type_list = tuple(tuple(arg_type) for _, *arg_type in args)
+    arg_type_list = tuple(validate_type(arg_type) for _, *arg_type in args)
     key = (name, arg_type_list)
     rtype, idx = fenv.scope.names[key]
     fenv = fenv.funcs[idx]  # the target function created by `pl_scan_func`
@@ -737,8 +734,7 @@ def pl_comp_func(fenv: Func, node):
     for arg_name, *arg_type in args:
         if not isinstance(arg_name, str):
             raise ValueError('bad argument name')
-        arg_type = tuple(arg_type)
-        validate_type(arg_type)
+        arg_type = validate_type(arg_type)
         if arg_type == ('void',):
             raise ValueError('bad argument type')
         fenv.add_var(arg_name, arg_type)
@@ -750,7 +746,7 @@ def pl_comp_func(fenv: Func, node):
         raise ValueError('bad body type')
     if rtype == ('void',):
         var = -1
-    fenv.code.append(('ret', var))
+    fenv.code.append(('ret', var))  # the implicit return
     return ('void',), -1
 
 
