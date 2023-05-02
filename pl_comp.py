@@ -128,7 +128,8 @@ def try_int(s):
 def pl_parse(s):
     idx, node = parse_expr(s, 0)
     idx = skip_space(s, idx)
-    assert idx == len(s)
+    if idx < len(s):
+        raise ValueError('trailing garbage')
     return node
 
 
