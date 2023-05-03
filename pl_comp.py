@@ -146,7 +146,7 @@ class Func:
         self.level = (prev.level + 1) if prev else 0
         # the return type of this function
         self.rtype = None
-        # a list of all functions (shared by all `Func` instances)
+        # a list of all functions. shared by all functions in a program.
         self.funcs = prev.funcs if prev else []
         # the name scope
         self.scope = Scope(None)
@@ -582,7 +582,7 @@ def pl_comp_scope(fenv: Func, node):
         # compile subexpressions
         for kid in g:
             if kid[0] == 'def' and len(kid) == 4:
-                target, funcs = funcs[0], funcs[1:]
+                target, *funcs = funcs
                 tp, var = pl_comp_func(target, kid)
             else:
                 tp, var = pl_comp_expr(fenv, kid, allow_var=True)
