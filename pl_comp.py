@@ -188,7 +188,7 @@ class Func:
     def get_var(self, name):
         tp, var = scope_get_var(self.scope, name)
         if var >= 0:
-            return (self.level, tp, var)
+            return self.level, tp, var
         if not self.prev:
             raise ValueError('undefined name')
         return self.prev.get_var(name)
@@ -265,10 +265,10 @@ def pl_comp_getvar(fenv: Func, node):
     assert isinstance(node, str)
     flevel, tp, var = fenv.get_var(node)
     if flevel == fenv.level:
-        # local var
+        # local variable
         return tp, var
     else:
-        # outer env
+        # non-local
         dst = fenv.tmp()
         fenv.code.append(('get_env', flevel, var, dst))
         return tp, dst
@@ -624,7 +624,7 @@ def pl_comp_setvar(fenv: Func, node):
         # local
         return dst_tp, move_to(fenv, var, dst)
     else:
-        # outer
+        # non-local
         fenv.code.append(('set_env', flevel, dst, var))
         return dst_tp, move_to(fenv, var, fenv.tmp())
 
