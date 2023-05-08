@@ -3,7 +3,7 @@
 An educational C-like toy programming language that compiles to x64 binary.
 
 The [compiler](pl_comp.py) is a self-contained Python program that weighs about 1000 LoC.
-It's part of an online [tutorial](https://build-your-own.org/b2a/p0_intro.html) on compilers and interpreters.
+It's part of an online [tutorial](https://build-your-own.org/compiler/) on compilers and interpreters.
 
 ## Introduction
 
@@ -222,5 +222,4 @@ To be added.
 
 But you can learn how to do it by reading the source code.
 
-Or you might like the online [tutorial](https://build-your-own.org/b2a/p0_intro.html) on building your own compiler,
-which is part of the WIP book "[5 Cool Coding Challenges from Beginner to Advanced](https://build-your-own.org/b2a/)".
+Or you might like the WIP book [From Source Code To Machine Code](https://build-your-own.org/compiler/), which this repo is based on.
