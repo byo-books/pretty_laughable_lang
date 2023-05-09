@@ -752,6 +752,38 @@ def pl_comp_func(fenv: Func, node):
     return ('void',), -1
 
 
+# execute the program as a ctype function
+class MemProgram:
+    def __init__(self, code):
+        # copy the code to an executable memory buffer
+        import mmap
+        flags = mmap.MAP_PRIVATE|mmap.MAP_ANONYMOUS
+        prot = mmap.PROT_EXEC|mmap.PROT_READ|mmap.PROT_WRITE
+        self.code = mmap.mmap(-1, len(code), flags=flags, prot=prot)
+        self.code[:] = code
+
+        # ctype function: int64_t (*)(void *stack)
+        import ctypes
+        func_type = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_void_p)
+        cbuf = ctypes.c_void_p.from_buffer(self.code)
+        self.cfunc = func_type(ctypes.addressof(cbuf))
+
+        # create the data stack
+        flags = mmap.MAP_PRIVATE|mmap.MAP_ANONYMOUS
+        prot = mmap.PROT_READ|mmap.PROT_WRITE
+        self.stack = mmap.mmap(-1, 8 << 20, flags=flags, prot=prot)
+        cbuf = ctypes.c_void_p.from_buffer(self.stack)
+        self.stack_addr = ctypes.addressof(cbuf)
+        # TODO: mprotect
+
+    def invoke(self):
+        return self.cfunc(self.stack_addr)
+
+    def close(self):
+        self.code.close()
+        self.stack.close()
+
+
 # dissambler:
 # objdump -b binary -M intel,x86-64 -m i386 --adjust-vma=0x1000 --start-address=0x1080
 class CodeGen:
@@ -833,6 +865,7 @@ class CodeGen:
         # p_align
         self.i64(0x1000)
 
+    # compile the program to an ELF executable
     def output_elf(self, root: Func):
         self.elf_begin()
         self.code_entry()
@@ -840,6 +873,25 @@ class CodeGen:
             self.func(func)
         self.code_end()
         self.elf_end()
+
+    # compiled to a C function
+    def output_mem(self, root: Func):
+        self.mem_entry()
+        for func in root.funcs:
+            self.func(func)
+        self.code_end()
+
+    # C function: int64_t (*)(void *stack)
+    def mem_entry(self):
+        # the first argument is the data stack
+        self.buf.extend(b"\x53")            # push rbx
+        self.buf.extend(b"\x48\x89\xFB")    # mov rbx, rdi
+        # call the main function
+        self.asm_call(0)
+        # the return value
+        self.buf.extend(b"\x48\x8b\x03")    # mov rax, [rbx]
+        self.buf.extend(b"\x5b")            # pop rbx
+        self.buf.extend(b"\xc3")            # ret
 
     def elf_end(self):
         # program header
@@ -1514,35 +1566,49 @@ def test_comp():
 
 
 def main():
+    # args
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('file', nargs='?', help='the input source file')
+    ap.add_argument('--exec', action='store_true', help='compile to memory and execute it')
     ap.add_argument('-o', '--output', help='the output path')
     ap.add_argument('--print-ir', action='store_true', help='print the intermediate representation')
     ap.add_argument('--alignment', type=int, default=16)
     args = ap.parse_args()
-    if not args.file or not args.output:
+    if not (args.file or args.output or args.exec):
         ap.print_help()
         test_comp()
         return
 
+    # source text
     with open(args.file, 'rt', encoding='utf-8') as fp:
         text = fp.read()
 
+    # parse & compile
     node = pl_parse_main(text)
     main = Func(None)
     _ = pl_comp_main(main, node)
     if args.print_ir:
         print(ir_dump(main))
 
-    gen = CodeGen()
-    gen.alignment = args.alignment
-    gen.output_elf(main)
+    # generate output
+    if args.output:
+        gen = CodeGen()
+        gen.alignment = args.alignment
+        gen.output_elf(main)
+        import os
+        fd = os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o755)
+        with os.fdopen(fd, 'wb', closefd=True) as fp:
+            fp.write(gen.buf)
 
-    import os
-    fd = os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o755)
-    with os.fdopen(fd, 'wb', closefd=True) as fp:
-        fp.write(gen.buf)
+    # execute
+    if args.exec:
+        gen = CodeGen()
+        gen.alignment = args.alignment
+        gen.output_mem(main)
+        prog = MemProgram(gen.buf)
+        import sys
+        sys.exit(prog.invoke())
 
 
 if __name__ == '__main__':
