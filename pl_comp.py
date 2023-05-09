@@ -947,18 +947,20 @@ class CodeGen:
     def i64(self, i):
         self.buf.extend(struct.pack('<q', i))
 
-    def asm_disp(self, opcode, reg, ptr, off):
+    # instr reg, [ptr + off]
+    # instr [ptr + off], reg
+    def asm_disp(self, lead, reg, ptr, off):
         assert reg < 16 and ptr < 16
+
+        lead = bytearray(lead)  # optional prefix + opcode
         if reg >= 8 or ptr >= 8:
-            assert (opcode[0] >> 4) == 0b0100
+            assert (lead[0] >> 4) == 0b0100
+            lead[0] |= (reg >> 3) << 2    # REX.R
+            lead[0] |= (ptr >> 3) << 0    # REX.B
+            reg &= 0b111
+            ptr &= 0b111
 
-        opcode = bytearray(opcode)
-        opcode[0] |= (reg >> 3) << 2    # REX.R
-        opcode[0] |= (ptr >> 3) << 0    # REX.B
-        reg &= 0b111
-        ptr &= 0b111
-
-        self.buf.extend(opcode)
+        self.buf.extend(lead)
         if off == 0:
             mod = 0
         elif -128 <= off < 128:
@@ -967,13 +969,15 @@ class CodeGen:
             mod = 3
         self.buf.append((mod << 6) | (reg << 3) | ptr)
         if mod == 1:
-            self.buf.append(off if off > 0 else (256 + off))
+            self.buf.append(off if off >= 0 else (256 + off))
         if mod == 3:
             self.i32(off)
 
+    # mov reg, [ptr + off]
     def asm_load(self, reg, ptr, off):
         self.asm_disp(b'\x48\x8b', reg, ptr, off)
 
+    # mov [ptr + off], reg
     def asm_store(self, ptr, off, reg):
         self.asm_disp(b'\x48\x89', reg, ptr, off)
 
