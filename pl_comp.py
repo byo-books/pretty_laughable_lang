@@ -1074,17 +1074,17 @@ class CodeGen:
         self.load_rax(a1)
 
         arith = {
-            '+': b'\x48\x03\x83',
-            '-': b'\x48\x2b\x83',
-            '*': b'\x48\x0f\xaf\x83',
+            '+': b'\x48\x03',       # add
+            '-': b'\x48\x2b',       # sub
+            '*': b'\x48\x0f\xaf',   # imul
         }
         cmp = {
-            'eq': b'\x0f\x94\xc0',
-            'ne': b'\x0f\x95\xc0',
-            'ge': b'\x0f\x9d\xc0',
-            'gt': b'\x0f\x9f\xc0',
-            'le': b'\x0f\x9e\xc0',
-            'lt': b'\x0f\x9c\xc0',
+            'eq': b'\x0f\x94\xc0',  # sete  al
+            'ne': b'\x0f\x95\xc0',  # setne al
+            'ge': b'\x0f\x9d\xc0',  # setge al
+            'gt': b'\x0f\x9f\xc0',  # setg  al
+            'le': b'\x0f\x9e\xc0',  # setle al
+            'lt': b'\x0f\x9c\xc0',  # setl  al
         }
 
         if op in ('/', '%'):
@@ -1097,7 +1097,7 @@ class CodeGen:
                 # mov, rax, rdx
                 self.buf.extend(b"\x48\x89\xd0")
         elif op in arith:
-            self.asm_disp(arith[op][:-1], CodeGen.A, CodeGen.B, a2 * 8)
+            self.asm_disp(arith[op], CodeGen.A, CodeGen.B, a2 * 8)
         elif op in cmp:
             # cmp rax, [rbx + a2*8]
             self.asm_disp(b'\x48\x3b', CodeGen.A, CodeGen.B, a2 * 8)
