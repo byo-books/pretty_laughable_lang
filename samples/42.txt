@@ -1,0 +1,6 @@
+(def (foo int) ((n int))
+    (if (le n 0)
+        (then 1)
+        (else (* n (call foo (- n 1))))))
+
+(/ (call foo 7) (call foo 5))
