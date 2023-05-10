@@ -784,7 +784,7 @@ class MemProgram:
         self.stack.close()
 
 
-# dissambler:
+# ELF dissambler:
 # objdump -b binary -M intel,x86-64 -m i386 --adjust-vma=0x1000 --start-address=0x1080
 class CodeGen:
     A = 0
@@ -874,7 +874,7 @@ class CodeGen:
         self.code_end()
         self.elf_end()
 
-    # compiled to a C function
+    # compiled to a callable function
     def output_mem(self, root: Func):
         self.mem_entry()
         for func in root.funcs:
@@ -1018,11 +1018,11 @@ class CodeGen:
         elif -128 <= off < 128:
             mod = 1
         else:
-            mod = 3
+            mod = 2
         self.buf.append((mod << 6) | (reg << 3) | ptr)
         if mod == 1:
             self.buf.append(off if off >= 0 else (256 + off))
-        if mod == 3:
+        if mod == 2:
             self.i32(off)
 
     # mov reg, [ptr + off]
