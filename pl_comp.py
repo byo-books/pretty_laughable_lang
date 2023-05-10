@@ -995,6 +995,8 @@ class CodeGen:
         self.padding()
 
     # append a signed integer
+    def i8(self, i):
+        self.buf.append(i if i >= 0 else (256 + i))
     def i32(self, i):
         self.buf.extend(struct.pack('<i', i))
     def i64(self, i):
@@ -1022,7 +1024,7 @@ class CodeGen:
             mod = 2     # [rm + disp32]
         self.buf.append((mod << 6) | (reg << 3) | rm)  # ModR/M
         if mod == 1:
-            self.buf.append(disp if disp >= 0 else (256 + disp))
+            self.i8(disp)
         if mod == 2:
             self.i32(disp)
 
