@@ -1169,11 +1169,6 @@ class CodeGen:
             self.store_rax(0)
         self.buf.append(0xc3)       # ret
 
-    def asm_op32_nonzero(self, prefix, i):
-        if i != 0:
-            self.buf.extend(prefix)
-            self.i32(i)
-
     def call(self, func, arg_start, level_cur, level_new):
         assert 1 <= level_cur
         assert 1 <= level_new <= level_cur + 1
@@ -1186,11 +1181,13 @@ class CodeGen:
             self.i32((level_new - 1) * 8)
 
         # make a new frame and call the target
-        self.asm_op32_nonzero(b"\x48\x81\xc3",  # add rbx, arg_start*8
-            arg_start * 8)
+        if arg_start != 0:
+            self.buf.extend(b"\x48\x81\xc3")    # add rbx, arg_start*8
+            self.i32(arg_start * 8)
         self.asm_call(func)                     # call func
-        self.asm_op32_nonzero(b"\x48\x81\xc3",  # add rbx, -arg_start*8
-            -arg_start * 8)
+        if arg_start != 0:
+            self.buf.extend(b"\x48\x81\xc3")    # add rbx, -arg_start*8
+            self.i32(-arg_start * 8)
 
         # cleanups
         self.buf.extend(b"\x48\x81\xc4")        # add rsp, (level_new - 1)*8
