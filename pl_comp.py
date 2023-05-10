@@ -999,39 +999,39 @@ class CodeGen:
     def i64(self, i):
         self.buf.extend(struct.pack('<q', i))
 
-    # instr reg, [ptr + off]
-    # instr [ptr + off], reg
-    def asm_disp(self, lead, reg, ptr, off):
-        assert reg < 16 and ptr < 16
+    # instr reg, [rm + disp]
+    # instr [rm + disp], reg
+    def asm_disp(self, lead, reg, rm, disp):
+        assert reg < 16 and rm < 16
 
         lead = bytearray(lead)  # optional prefix + opcode
-        if reg >= 8 or ptr >= 8:
-            assert (lead[0] >> 4) == 0b0100
-            lead[0] |= (reg >> 3) << 2    # REX.R
-            lead[0] |= (ptr >> 3) << 0    # REX.B
+        if reg >= 8 or rm >= 8:
+            assert (lead[0] >> 4) == 0b0100 # REX
+            lead[0] |= (reg >> 3) << 2      # REX.R
+            lead[0] |= (rm >> 3) << 0       # REX.B
             reg &= 0b111
-            ptr &= 0b111
+            rm &= 0b111
 
         self.buf.extend(lead)
-        if off == 0:
-            mod = 0
-        elif -128 <= off < 128:
-            mod = 1
+        if disp == 0:
+            mod = 0     # [rm]
+        elif -128 <= disp < 128:
+            mod = 1     # [rm + disp8]
         else:
-            mod = 2
-        self.buf.append((mod << 6) | (reg << 3) | ptr)
+            mod = 2     # [rm + disp32]
+        self.buf.append((mod << 6) | (reg << 3) | rm)  # ModR/M
         if mod == 1:
-            self.buf.append(off if off >= 0 else (256 + off))
+            self.buf.append(disp if disp >= 0 else (256 + disp))
         if mod == 2:
-            self.i32(off)
+            self.i32(disp)
 
-    # mov reg, [ptr + off]
-    def asm_load(self, reg, ptr, off):
-        self.asm_disp(b'\x48\x8b', reg, ptr, off)
+    # mov reg, [rm + disp]
+    def asm_load(self, reg, rm, disp):
+        self.asm_disp(b'\x48\x8b', reg, rm, disp)
 
-    # mov [ptr + off], reg
-    def asm_store(self, ptr, off, reg):
-        self.asm_disp(b'\x48\x89', reg, ptr, off)
+    # mov [rm + disp], reg
+    def asm_store(self, rm, disp, reg):
+        self.asm_disp(b'\x48\x89', reg, rm, disp)
 
     def store_rax(self, dst):
         # mov [rbx + dst32*8], rax
