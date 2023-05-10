@@ -803,11 +803,11 @@ class CodeGen:
         # output
         self.buf = bytearray()
         # states
-        self.jmps = dict()
-        self.calls = dict()
-        self.strings = dict()
-        self.func2off = []
-        self.fields = dict()
+        self.jmps = dict()      # label -> offset list
+        self.calls = dict()     # function index -> offset list
+        self.strings = dict()   # string literal -> offset list
+        self.func2off = []      # func idx -> offset
+        self.fields = dict()    # ELF field name -> (bit-size, offset)
 
     def f16(self, name):
         self.fields[name] = (16, len(self.buf))
@@ -953,29 +953,30 @@ class CodeGen:
         self.padding()
 
         # offsets
-        self.func2off.append(len(self.buf))
-        pos2off = []
+        self.func2off.append(len(self.buf)) # function index -> code offset
+        pos2off = []    # virtual instruction -> code offset
 
-        # each instruction
+        # call the method for each instruction
         for instr_name, *instr_args in func.code:
             pos2off.append(len(self.buf))
             method = getattr(self.__class__, instr_name)
             method(self, *instr_args)
 
-        # fill the jmp address
+        # fill in the jmp address
         for L, off_list in self.jmps.items():
             dst_off = pos2off[func.labels[L]]
             for patch_off in off_list:
                 self.patch_addr(patch_off, dst_off)
         self.jmps.clear()
 
+    # fill in a 4-byte `rip` relative offset
     def patch_addr(self, patch_off, dst_off):
-        src_off = patch_off + 4
+        src_off = patch_off + 4     # rip
         relative = struct.pack('<i', dst_off - src_off)
         self.buf[patch_off:patch_off+4] = relative
 
     def code_end(self):
-        # fill the call address
+        # fill in the call address
         for L, off_list in self.calls.items():
             dst_off = self.func2off[L]
             for patch_off in off_list:
@@ -993,9 +994,9 @@ class CodeGen:
         # alignment
         self.padding()
 
+    # append a signed integer
     def i32(self, i):
         self.buf.extend(struct.pack('<i', i))
-
     def i64(self, i):
         self.buf.extend(struct.pack('<q', i))
 
