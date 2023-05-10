@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 
 
+import os
+import sys
+import mmap
+import ctypes
 import struct
+import platform
 
 
 # TODO: function pointers
@@ -756,14 +761,12 @@ def pl_comp_func(fenv: Func, node):
 class MemProgram:
     def __init__(self, code):
         # copy the code to an executable memory buffer
-        import mmap
         flags = mmap.MAP_PRIVATE|mmap.MAP_ANONYMOUS
         prot = mmap.PROT_EXEC|mmap.PROT_READ|mmap.PROT_WRITE
         self.code = mmap.mmap(-1, len(code), flags=flags, prot=prot)
         self.code[:] = code
 
         # ctype function: int64_t (*)(void *stack)
-        import ctypes
         func_type = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_void_p)
         cbuf = ctypes.c_void_p.from_buffer(self.code)
         self.cfunc = func_type(ctypes.addressof(cbuf))
@@ -782,6 +785,56 @@ class MemProgram:
     def close(self):
         self.code.close()
         self.stack.close()
+
+
+# execute the program as a ctype function
+class MemProgramWindows:
+    def __init__(self, code):
+        self.kernel32 = ctypes.CDLL('kernel32', use_last_error=True)
+
+        MEM_COMMIT = 0x00001000
+        MEM_RESERVE = 0x00002000
+        PAGE_READWRITE = 0x04
+        PAGE_EXECUTE_READWRITE = 0x40
+
+        VirtualAlloc = self.kernel32.VirtualAlloc
+        VirtualAlloc.restype = ctypes.c_void_p
+
+        # copy the code to an executable memory buffer
+        self.code = VirtualAlloc(
+            None, len(code),
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_EXECUTE_READWRITE,
+        )
+        cbuf = ctypes.c_void_p.from_buffer(code)
+        ctypes.memmove(self.code, ctypes.addressof(cbuf), len(code))
+
+        # ctype function: int64_t (*)(void *stack)
+        func_type = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_void_p)
+        self.cfunc = func_type(self.code)
+
+        # create the data stack
+        self.stack = VirtualAlloc(
+            None, 8 << 20,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_READWRITE,
+        )
+        # TODO: mprotect
+
+    def invoke(self):
+        return self.cfunc(self.stack)
+
+    def close(self):
+        MEM_RELEASE = 0x00008000
+
+        VirtualFree = self.kernel32.VirtualFree
+        VirtualFree.argtypes = (ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int)
+        VirtualFree.restype = ctypes.c_bool
+
+        ok = VirtualFree(self.code, 0, MEM_RELEASE)
+        assert ok
+        ok = VirtualFree(self.stack, 0, MEM_RELEASE)
+        assert ok
 
 
 # ELF dissambler:
@@ -885,7 +938,11 @@ class CodeGen:
     def mem_entry(self):
         # the first argument is the data stack
         self.buf.extend(b"\x53")            # push rbx
-        self.buf.extend(b"\x48\x89\xFB")    # mov rbx, rdi
+        system = platform.system()
+        if system == 'Windows' or system.startswith('CYGWIN'):
+            self.buf.extend(b"\x48\x89\xCB")    # mov rbx, rcx
+        else:
+            self.buf.extend(b"\x48\x89\xFB")    # mov rbx, rdi
         # call the main function
         self.asm_call(0)
         # the return value
@@ -1596,7 +1653,6 @@ def main():
         gen = CodeGen()
         gen.alignment = args.alignment
         gen.output_elf(main)
-        import os
         fd = os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o755)
         with os.fdopen(fd, 'wb', closefd=True) as fp:
             fp.write(gen.buf)
@@ -1606,9 +1662,14 @@ def main():
         gen = CodeGen()
         gen.alignment = args.alignment
         gen.output_mem(main)
-        prog = MemProgram(gen.buf)
-        import sys
-        sys.exit(prog.invoke())
+        if platform.system() == 'Windows':
+            prog = MemProgramWindows(gen.buf)
+        else:
+            prog = MemProgram(gen.buf)
+        try:
+            sys.exit(prog.invoke())
+        finally:
+            prog.close()
 
 
 if __name__ == '__main__':
