@@ -840,6 +840,7 @@ class MemProgramWindows:
 # ELF dissambler:
 # objdump -b binary -M intel,x86-64 -m i386 --adjust-vma=0x1000 --start-address=0x1080
 class CodeGen:
+    # register encodings
     A = 0
     C = 1
     D = 2
@@ -1005,6 +1006,7 @@ class CodeGen:
         while len(self.buf) % self.alignment:
             self.buf.append(0xcc)           # int3
 
+    # compile a function
     def func(self, func: Func):
         # alignment
         self.padding()
@@ -1134,9 +1136,9 @@ class CodeGen:
         self.load_rax(a1)
 
         arith = {
-            '+': b'\x48\x03',       # add
-            '-': b'\x48\x2b',       # sub
-            '*': b'\x48\x0f\xaf',   # imul
+            '+': b'\x48\x03',       # add  reg, rm
+            '-': b'\x48\x2b',       # sub  reg, rm
+            '*': b'\x48\x0f\xaf',   # imul reg, rm
         }
         cmp = {
             'eq': b'\x0f\x94\xc0',  # sete  al
