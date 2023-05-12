@@ -147,7 +147,7 @@ class Func:
     def __init__(self, prev):
         # the parent function (linked list)
         self.prev = prev
-        # nested function level, starts with 0
+        # nested function level. the level of `main` is 1.
         self.level = (prev.level + 1) if prev else 0
         # the return type of this function
         self.rtype = None
@@ -1064,7 +1064,7 @@ class CodeGen:
     # instr reg, [rm + disp]
     # instr [rm + disp], reg
     def asm_disp(self, lead, reg, rm, disp):
-        assert reg < 16 and rm < 16
+        assert reg < 16 and rm < 16 and rm != CodeGen.SP
 
         lead = bytearray(lead)  # optional prefix + opcode
         if reg >= 8 or rm >= 8:
@@ -1645,16 +1645,16 @@ def main():
 
     # parse & compile
     node = pl_parse_main(text)
-    main = Func(None)
-    _ = pl_comp_main(main, node)
+    root = Func(None)
+    _ = pl_comp_main(root, node)
     if args.print_ir:
-        print(ir_dump(main))
+        print(ir_dump(root))
 
     # generate output
     if args.output:
         gen = CodeGen()
         gen.alignment = args.alignment
-        gen.output_elf(main)
+        gen.output_elf(root)
         fd = os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o755)
         with os.fdopen(fd, 'wb', closefd=True) as fp:
             fp.write(gen.buf)
@@ -1663,7 +1663,7 @@ def main():
     if args.exec:
         gen = CodeGen()
         gen.alignment = args.alignment
-        gen.output_mem(main)
+        gen.output_mem(root)
         if platform.system() == 'Windows':
             prog = MemProgramWindows(gen.buf)
         else:
