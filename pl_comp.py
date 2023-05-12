@@ -1235,11 +1235,13 @@ class CodeGen:
         assert 1 <= level_cur
         assert 1 <= level_new <= level_cur + 1
 
-        # pointers to outer frames
+        # put a list of pointers to outer frames in the `rsp` stack
         if level_new > level_cur:
+            # grow the list by one
             self.buf.append(0x53)               # push rbx
         for _ in range(min(level_new, level_cur) - 1):
-            self.buf.extend(b"\xff\xb4\x24")    # push [rsp + (level_new - 1)*8]
+            # copy the previous list
+            self.buf.extend(b"\xff\xb4\x24")    # push [rsp + (level_new-1)*8]
             self.i32((level_new - 1) * 8)
 
         # make a new frame and call the target
@@ -1251,7 +1253,7 @@ class CodeGen:
             self.buf.extend(b"\x48\x81\xc3")    # add rbx, -arg_start*8
             self.i32(-arg_start * 8)
 
-        # cleanups
+        # discard the list of pointers
         self.buf.extend(b"\x48\x81\xc4")        # add rsp, (level_new - 1)*8
         self.i32((level_new - 1) * 8)
 
