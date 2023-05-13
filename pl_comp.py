@@ -928,7 +928,7 @@ class CodeGen:
         self.code_end()
         self.elf_end()
 
-    # compiled to a callable function
+    # compile to a callable function
     def output_mem(self, root: Func):
         self.mem_entry()
         for func in root.funcs:
@@ -1122,7 +1122,7 @@ class CodeGen:
             self.buf.extend(b"\x48\xc7\xc0")        # mov rax, imm32
             self.i32(val)
         else:
-            self.buf.extend(b'\x48\xb8')            # mov rax, imm64
+            self.buf.extend(b"\x48\xb8")            # mov rax, imm64
             self.i64(val)
         self.store_rax(dst)
 
@@ -1159,6 +1159,7 @@ class CodeGen:
                 # mov rax, rdx
                 self.buf.extend(b"\x48\x89\xd0")
         elif op in arith:
+            # op rax, [rbx + a2*8]
             self.asm_disp(arith[op], CodeGen.A, CodeGen.B, a2 * 8)
         elif op in cmp:
             # cmp rax, [rbx + a2*8]

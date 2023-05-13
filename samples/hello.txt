@@ -1,4 +1,4 @@
-; the write() syscall:
-; ssize_t write(int fd, const void *buf, size_t count);
+;; the write() syscall:
+;; ssize_t write(int fd, const void *buf, size_t count);
 (syscall 1 1 "Hello world!\n" 13)
 0
