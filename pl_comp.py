@@ -1115,11 +1115,11 @@ class CodeGen:
         elif val == -1:
             self.buf.extend(b"\x48\x83\xc8\xff")    # or rax, -1
         elif (val >> 31) == 0:
-            self.buf.extend(b"\xb8")                # mov, eax, imm32
+            self.buf.extend(b"\xb8")                # mov eax, imm32
             self.i32(val)
         elif (val >> 31) == -1:
             # sign-extended
-            self.buf.extend(b"\x48\xc7\xc0")        # mov, rax, imm32
+            self.buf.extend(b"\x48\xc7\xc0")        # mov rax, imm32
             self.i32(val)
         else:
             self.buf.extend(b'\x48\xb8')            # mov rax, imm64
@@ -1156,7 +1156,7 @@ class CodeGen:
             self.buf.extend(b'\x48\xf7\xbb')
             self.i32(a2 * 8)
             if op == '%':
-                # mov, rax, rdx
+                # mov rax, rdx
                 self.buf.extend(b"\x48\x89\xd0")
         elif op in arith:
             self.asm_disp(arith[op], CodeGen.A, CodeGen.B, a2 * 8)
@@ -1321,7 +1321,7 @@ class CodeGen:
 
     def syscall(self, dst, num, *arg_list):
         # syscall ref: https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
-        self.buf.extend(b"\xb8")                # mov, eax, imm32
+        self.buf.extend(b"\xb8")                # mov eax, imm32
         self.i32(num)
         arg_regs = [CodeGen.DI, CodeGen.SI, CodeGen.D, 10, 8, 9]
         assert len(arg_list) <= len(arg_regs)
