@@ -395,9 +395,9 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
         return pl_comp_scope(fenv, node)
     # new variable
     if node[0] == 'var' and len(node) == 3:
-        # Variable declarations are allowed only as
-        # children of scopes and conditions.
         if not allow_var:
+            # Variable declarations are allowed only as
+            # children of scopes and conditions.
             raise ValueError('variable declaration not allowed here')
         return pl_comp_newvar(fenv, node)
     # update a variable
@@ -471,26 +471,6 @@ def pl_comp_cast(fenv: Func, node):
         return tp, var
 
     raise ValueError('bad cast')
-
-
-def pl_comp_syscall(fenv: Func, node):
-    _, num, *args = node
-    if isinstance(num, list) and num[0] == 'val':
-        _, num = num
-    if not isinstance(num, int) or num < 0:
-        raise ValueError('bad syscall number')
-
-    save = fenv.stack
-    sys_vars = []
-    for kid in args:
-        arg_tp, var = pl_comp_expr_tmp(fenv, kid)
-        if arg_tp == ('void',):
-            raise ValueError('bad syscall argument type')
-        sys_vars.append(var)
-    fenv.stack = save
-
-    fenv.code.append(('syscall', fenv.stack, num, *sys_vars))
-    return ('int',), fenv.tmp()
 
 
 def pl_comp_peek(fenv: Func, node):
@@ -755,6 +735,26 @@ def pl_comp_func(fenv: Func, node):
         var = -1
     fenv.code.append(('ret', var))  # the implicit return
     return ('void',), -1
+
+
+def pl_comp_syscall(fenv: Func, node):
+    _, num, *args = node
+    if isinstance(num, list) and num[0] == 'val':
+        _, num = num
+    if not isinstance(num, int) or num < 0:
+        raise ValueError('bad syscall number')
+
+    save = fenv.stack
+    sys_vars = []
+    for kid in args:
+        arg_tp, var = pl_comp_expr_tmp(fenv, kid)
+        if arg_tp == ('void',):
+            raise ValueError('bad syscall argument type')
+        sys_vars.append(var)
+    fenv.stack = save
+
+    fenv.code.append(('syscall', fenv.stack, num, *sys_vars))
+    return ('int',), fenv.tmp()
 
 
 # execute the program as a ctype function
@@ -1226,12 +1226,6 @@ class CodeGen:
         self.calls.setdefault(L, []).append(len(self.buf))
         self.buf.extend(b'\0\0\0\0')
 
-    def ret(self, a1):
-        if a1 > 0:
-            self.load_rax(a1)
-            self.store_rax(0)
-        self.buf.append(0xc3)       # ret
-
     def call(self, func, arg_start, level_cur, level_new):
         assert 1 <= level_cur
         assert 1 <= level_new <= level_cur + 1
@@ -1257,6 +1251,12 @@ class CodeGen:
         # discard the list of pointers
         self.buf.extend(b"\x48\x81\xc4")        # add rsp, (level_new - 1)*8
         self.i32((level_new - 1) * 8)
+
+    def ret(self, a1):
+        if a1 > 0:
+            self.load_rax(a1)
+            self.store_rax(0)
+        self.buf.append(0xc3)       # ret
 
     def load_env_addr(self, level_var):
         self.buf.extend(b"\x48\x8b\x84\x24")    # mov rax, [rsp + level_var*8]
