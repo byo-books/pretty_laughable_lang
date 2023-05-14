@@ -852,7 +852,8 @@ class MemProgramWindows:
 
 
 # ELF dissambler:
-# objdump -b binary -M intel,x86-64 -m i386 --adjust-vma=0x1000 --start-address=0x1080
+# objdump -b binary -M intel,x86-64 -m i386 \
+#   --adjust-vma=0x1000 --start-address=0x1080 -D ELF_FILE
 class CodeGen:
     # register encodings
     A = 0
@@ -875,40 +876,43 @@ class CodeGen:
         self.calls = dict()     # function index -> offset list
         self.strings = dict()   # string literal -> offset list
         self.func2off = []      # func idx -> offset
-        self.fields = dict()    # ELF field name -> (bit-size, offset)
+        self.fields = dict()    # ELF field name -> (size, offset)
 
     # append a placeholder field
     def f16(self, name):
-        self.fields[name] = (16, len(self.buf))
+        self.fields[name] = (2, len(self.buf))
         self.buf.extend(b'\0\0')
     def f32(self, name):
-        self.fields[name] = (32, len(self.buf))
+        self.fields[name] = (4, len(self.buf))
         self.buf.extend(b'\0\0\0\0')
     def f64(self, name):
-        self.fields[name] = (64, len(self.buf))
+        self.fields[name] = (8, len(self.buf))
         self.buf.extend(b'\0' * 8)
 
     # fill in the placeholder
     def setf(self, name, i):
-        bits, off = self.fields[name]
-        fmt = {16: '<H', 32: '<I', 64: '<Q'}[bits]
-        sz = bits // 8
+        sz, off = self.fields[name]
+        fmt = {2: '<H', 4: '<I', 8: '<Q'}[sz]
         self.buf[off:off+sz] = struct.pack(fmt, i)
 
     def elf_begin(self):
         self.elf_header()
 
-        phdr_start = len(self.buf)
+        phdr_start = len(self.buf)  # the program header starts here
         self.elf_program_header()
+        # program header size
         self.setf('e_phentsize', len(self.buf) - phdr_start)
+        # number of program headers: 1
         self.setf('e_phnum', 1)
 
         self.padding()
+        # the entry point: the virtual address where the program start
         self.setf('e_entry', self.vaddr + len(self.buf))
 
     def elf_header(self):
         # ref: https://www.muppetlabs.com/~breadbox/software/tiny/tiny-elf64.asm.txt
-        self.buf.extend(bytes.fromhex('7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00'))
+        self.buf.extend(bytes.fromhex('7F 45 4C 46 02 01 01 00'))
+        self.buf.extend(bytes.fromhex('00 00 00 00 00 00 00 00'))
         # e_type, e_machine, e_version
         self.buf.extend(bytes.fromhex('02 00 3E 00 01 00 00 00'))
         self.f64('e_entry')
@@ -921,15 +925,17 @@ class CodeGen:
         self.f16('e_shentsize')
         self.f16('e_shnum')
         self.f16('e_shstrndx')
-        self.setf('e_phoff', len(self.buf))
-        self.setf('e_ehsize', len(self.buf))
+        self.setf('e_phoff', len(self.buf))     # offset of the program header
+        self.setf('e_ehsize', len(self.buf))    # size of the ELF header
 
     def elf_program_header(self):
-        # p_type, p_flags, p_offset
-        self.buf.extend(bytes.fromhex('01 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00'))
+        # p_type, p_flags
+        self.buf.extend(bytes.fromhex('01 00 00 00 05 00 00 00'))
+        # p_offset
+        self.i64(0)
         # p_vaddr, p_paddr
         self.i64(self.vaddr)
-        self.i64(self.vaddr)
+        self.i64(self.vaddr)    # useless
         self.f64('p_filesz')
         self.f64('p_memsz')
         # p_align
@@ -937,15 +943,19 @@ class CodeGen:
 
     # compile the program to an ELF executable
     def output_elf(self, root: Func):
+        # ELF header + program header
         self.elf_begin()
+        # machine code
         self.code_entry()
         for func in root.funcs:
             self.func(func)
         self.code_end()
+        # fill in some ELF fields
         self.elf_end()
 
     def elf_end(self):
-        # program header
+        # fields in program header:
+        # the size of the mapping. we're mapping the whole file here.
         self.setf('p_filesz', len(self.buf))
         self.setf('p_memsz', len(self.buf))
 
@@ -957,26 +967,26 @@ class CodeGen:
         # syscall abi: https://github.com/torvalds/linux/blob/v5.0/arch/x86/entry/entry_64.S#L107
         # mmap
         self.buf.extend(
-            b"\xb8\x09\x00\x00\x00"         # mov eax, 9
-            # b"\x31\xff"                     # xor edi, edi      // addr = NULL
-            b"\xbf\x00\x10\x00\x00"         # mov edi, 4096     // addr
-            b"\x48\xc7\xc6%s"               # mov rsi, xxx      // len
-            b"\xba\x03\x00\x00\x00"         # mov edx, 3        // prot = PROT_READ|PROT_WRITE
-            b"\x41\xba\x22\x00\x00\x00"     # mov r10d, 0x22    // flags = MAP_PRIVATE|MAP_ANONYMOUS
-            b"\x49\x83\xc8\xff"             # or r8, -1         // fd = -1
-            b"\x4d\x31\xc9"                 # xor r9, r9        // offset = 0
-            b"\x0f\x05"                     # syscall
-            b"\x48\x89\xc3"                 # mov rbx, rax      // the data stack
+            b"\xb8\x09\x00\x00\x00"     # mov eax, 9
+            # b"\x31\xff"                 # xor edi, edi      // addr = NULL
+            b"\xbf\x00\x10\x00\x00"     # mov edi, 4096     // addr
+            b"\x48\xc7\xc6%s"           # mov rsi, xxx      // len
+            b"\xba\x03\x00\x00\x00"     # mov edx, 3        // prot = PROT_READ|PROT_WRITE
+            b"\x41\xba\x22\x00\x00\x00" # mov r10d, 0x22    // flags = MAP_PRIVATE|MAP_ANONYMOUS
+            b"\x49\x83\xc8\xff"         # or r8, -1         // fd = -1
+            b"\x4d\x31\xc9"             # xor r9, r9        // offset = 0
+            b"\x0f\x05"                 # syscall
+            b"\x48\x89\xc3"             # mov rbx, rax      // the data stack
             % operand(data + 4096)
         )
 
         # mprotect
         self.buf.extend(
-            b"\xb8\x0a\x00\x00\x00"         # mov eax, 10
-            b"\x48\x8d\xbb%s"               # lea rdi, [rbx + data]
-            b"\xbe\x00\x10\x00\x00"         # mov esi, 4096
-            b"\x31\xd2"                     # xor edx, edx
-            b"\x0f\x05"                     # syscall
+            b"\xb8\x0a\x00\x00\x00"     # mov eax, 10
+            b"\x48\x8d\xbb%s"           # lea rdi, [rbx + data]
+            b"\xbe\x00\x10\x00\x00"     # mov esi, 4096
+            b"\x31\xd2"                 # xor edx, edx
+            b"\x0f\x05"                 # syscall
             % operand(data)
         )
         # FIXME: check the syscall return value
@@ -988,9 +998,9 @@ class CodeGen:
         self.asm_call(0)
         # exit
         self.buf.extend(
-            b"\xb8\x3c\x00\x00\x00"         # mov eax, 60
-            b"\x48\x8b\x3b"                 # mov rdi, [rbx]
-            b"\x0f\x05"                     # syscall
+            b"\xb8\x3c\x00\x00\x00"     # mov eax, 60
+            b"\x48\x8b\x3b"             # mov rdi, [rbx]
+            b"\x0f\x05"                 # syscall
         )
 
     # easier to find things in hexdump
