@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import os
 import sys
 import mmap
@@ -867,7 +866,7 @@ class CodeGen:
 
     def __init__(self):
         # params
-        self.vaddr = 0x1000
+        self.vaddr = 0x1000     # the virtual address for the program
         self.alignment = 16
         # output
         self.buf = bytearray()
@@ -878,6 +877,7 @@ class CodeGen:
         self.func2off = []      # func idx -> offset
         self.fields = dict()    # ELF field name -> (bit-size, offset)
 
+    # append a placeholder field
     def f16(self, name):
         self.fields[name] = (16, len(self.buf))
         self.buf.extend(b'\0\0')
@@ -888,6 +888,7 @@ class CodeGen:
         self.fields[name] = (64, len(self.buf))
         self.buf.extend(b'\0' * 8)
 
+    # fill in the placeholder
     def setf(self, name, i):
         bits, off = self.fields[name]
         fmt = {16: '<H', 32: '<I', 64: '<Q'}[bits]
@@ -943,6 +944,63 @@ class CodeGen:
         self.code_end()
         self.elf_end()
 
+    def elf_end(self):
+        # program header
+        self.setf('p_filesz', len(self.buf))
+        self.setf('p_memsz', len(self.buf))
+
+    def create_stack(self, data):
+        def operand(i):
+            return struct.pack('<i', i)
+
+        # syscall ref: https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
+        # syscall abi: https://github.com/torvalds/linux/blob/v5.0/arch/x86/entry/entry_64.S#L107
+        # mmap
+        self.buf.extend(
+            b"\xb8\x09\x00\x00\x00"         # mov eax, 9
+            # b"\x31\xff"                     # xor edi, edi      // addr = NULL
+            b"\xbf\x00\x10\x00\x00"         # mov edi, 4096     // addr
+            b"\x48\xc7\xc6%s"               # mov rsi, xxx      // len
+            b"\xba\x03\x00\x00\x00"         # mov edx, 3        // prot = PROT_READ|PROT_WRITE
+            b"\x41\xba\x22\x00\x00\x00"     # mov r10d, 0x22    // flags = MAP_PRIVATE|MAP_ANONYMOUS
+            b"\x49\x83\xc8\xff"             # or r8, -1         // fd = -1
+            b"\x4d\x31\xc9"                 # xor r9, r9        // offset = 0
+            b"\x0f\x05"                     # syscall
+            b"\x48\x89\xc3"                 # mov rbx, rax      // the data stack
+            % operand(data + 4096)
+        )
+
+        # mprotect
+        self.buf.extend(
+            b"\xb8\x0a\x00\x00\x00"         # mov eax, 10
+            b"\x48\x8d\xbb%s"               # lea rdi, [rbx + data]
+            b"\xbe\x00\x10\x00\x00"         # mov esi, 4096
+            b"\x31\xd2"                     # xor edx, edx
+            b"\x0f\x05"                     # syscall
+            % operand(data)
+        )
+        # FIXME: check the syscall return value
+
+    def code_entry(self):
+        # create the data stack (8M)
+        self.create_stack(0x800000)
+        # call the main function
+        self.asm_call(0)
+        # exit
+        self.buf.extend(
+            b"\xb8\x3c\x00\x00\x00"         # mov eax, 60
+            b"\x48\x8b\x3b"                 # mov rdi, [rbx]
+            b"\x0f\x05"                     # syscall
+        )
+
+    # easier to find things in hexdump
+    def padding(self):
+        if self.alignment == 0:
+            return
+        self.buf.append(0xcc)   # int3
+        while len(self.buf) % self.alignment:
+            self.buf.append(0xcc)
+
     # compile to a callable function
     def output_mem(self, root: Func):
         self.mem_entry()
@@ -966,64 +1024,8 @@ class CodeGen:
         self.buf.extend(b"\x5b")            # pop rbx
         self.buf.extend(b"\xc3")            # ret
 
-    def elf_end(self):
-        # program header
-        self.setf('p_filesz', len(self.buf))
-        self.setf('p_memsz', len(self.buf))
-
-    def create_stack(self, data):
-        def operand(i):
-            return struct.pack('<i', i)
-
-        # syscall ref: https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/
-        # syscall abi: https://github.com/torvalds/linux/blob/v5.0/arch/x86/entry/entry_64.S#L107
-        # mmap
-        self.buf.extend(
-            b"\xb8\x09\x00\x00\x00"         # mov eax, 9
-            # b"\x31\xff"                     # xor edi, edi      // addr = NULL
-            b"\xbf\x00\x10\x00\x00"         # mov edi, 4096     // addr
-            b"\x48\xc7\xc6%s"               # mov rsi, xxx      // len
-            b"\xba\x03\x00\x00\x00"         # mov edx, 3        // prot = PROT_READ|PROT_WRITE
-            b"\x41\xba\x22\x00\x00\x00"     # mov r10d, 0x22    // flags = MAP_PRIVATE|MAP_ANONYMOUS
-            b"\x49\x83\xc8\xff"             # or r8, -1         // fd = -1
-            b"\x4d\x31\xc9"                 # xor r9, r9        // offset = 0
-            b"\x0f\x05"                     # syscall
-            % (operand(data + 4096),)
-        )
-
-        # mprotect
-        self.buf.extend(
-            b"\x48\x89\xc3"                 # mov rbx, rax      // the data stack
-            b"\xb8\x0a\x00\x00\x00"         # mov eax, 10
-            b"\x48\x8d\xbb%s"               # lea rdi, [rbx + data]
-            b"\xbe\x00\x10\x00\x00"         # mov esi, 4096
-            b"\x31\xd2"                     # xor edx, edx
-            b"\x0f\x05"                     # syscall
-            % (operand(data))
-        )
-        # FIXME: check the syscall return value
-
-    def code_entry(self):
-        # create the data stack (8M)
-        self.create_stack(0x800000)
-        # call the main function
-        self.asm_call(0)
-        # exit
-        self.buf.extend(
-            b"\xb8\x3c\x00\x00\x00"         # mov eax, 60
-            b"\x48\x8b\x3b"                 # mov rdi, [rbx]
-            b"\x0f\x05"                     # syscall
-        )
-
-    def padding(self):
-        if self.alignment == 0:
-            return
-        while len(self.buf) % self.alignment:
-            self.buf.append(0xcc)           # int3
-
     # compile a function
     def func(self, func: Func):
-        # alignment
         self.padding()
 
         # offsets
@@ -1056,7 +1058,6 @@ class CodeGen:
             for patch_off in off_list:
                 self.patch_addr(patch_off, dst_off)
         self.calls.clear()
-        # alignment
         self.padding()
         # strings
         for s, off_list in self.strings.items():
@@ -1065,8 +1066,6 @@ class CodeGen:
                 self.patch_addr(patch_off, dst_off)
             self.buf.extend(s.encode('utf-8') + b'\0')
         self.strings.clear()
-        # alignment
-        self.padding()
 
     # append a signed integer
     def i8(self, i):
