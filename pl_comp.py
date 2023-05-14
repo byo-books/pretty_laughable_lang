@@ -442,6 +442,9 @@ def pl_comp_expr_tmp(fenv: Func, node, *, allow_var=False):
         return pl_comp_peek(fenv, node)
     if node[0] == 'poke' and len(node) == 3:
         return pl_comp_poke(fenv, node)
+    # ref
+    if node[0] == 'ref' and len(node) == 2:
+        return pl_comp_ref(fenv, node)
     # debug
     if node == ['debug']:
         fenv.code.append(('debug',))
@@ -502,6 +505,18 @@ def pl_comp_poke(fenv: Func, node):
         suffix = '8'
     fenv.code.append(('poke' + suffix, var_ptr, var_val))
     return t2, move_to(fenv, var_val, fenv.tmp())
+
+
+def pl_comp_ref(fenv: Func, node):
+    _, name = node
+
+    flevel, var_tp, var = fenv.get_var(name)
+    dst = fenv.tmp()
+    if flevel == fenv.level:
+        fenv.code.append(('ref_var', var, dst))         # local
+    else:
+        fenv.code.append(('ref_env', flevel, var, dst)) # non-local
+    return ('ptr', *var_tp), dst
 
 
 def pl_comp_main(fenv: Func, node):
@@ -1315,6 +1330,20 @@ class CodeGen:
         # mov [rdx], al
         self.buf.extend(b"\x88\x02")
 
+    def ref_var(self, var, dst):
+        # lea rax, [rbx + var*8]
+        self.buf.extend(b"\x48\x8D\x83")
+        self.i32(var * 8)
+        self.store_rax(dst)
+
+    def ref_env(self, level_var, var, dst):
+        # mov rax, [rsp + level_var*8]
+        self.load_env_addr(level_var)
+        # add rax, var*8
+        self.buf.extend(b"\x48\x05")
+        self.i32(var * 8)
+        self.store_rax(dst)
+
     def cast8(self, var):
         # movzx eax, byte ptr [rbx + var*8]
         self.asm_disp(b"\x0f\xb6", CodeGen.A, CodeGen.B, var * 8)
@@ -1351,6 +1380,8 @@ ret -1
 call func arg_start level_cur level_new
 get_env level_var var dst
 set_env level_var var src
+ref_var var dst
+ref_env level_var var dst
 lea
 peek
 poke
@@ -1397,6 +1428,7 @@ debug
 (ptr elem_type)
 (peek ptr)
 (poke ptr value)
+(ref name)
 (syscall num args...)
 (cast type val)
 '''
