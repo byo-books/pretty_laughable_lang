@@ -1120,11 +1120,11 @@ class CodeGen:
         self.asm_disp(b'\x48\x89', reg, rm, disp)
 
     def store_rax(self, dst):
-        # mov [rbx + dst32*8], rax
+        # mov [rbx + dst*8], rax
         self.asm_store(CodeGen.B, dst * 8, CodeGen.A)
 
     def load_rax(self, src):
-        # mov rax, [rbx + src32*8]
+        # mov rax, [rbx + src*8]
         self.asm_load(CodeGen.A, CodeGen.B, src * 8)
 
     def const(self, val, dst):
