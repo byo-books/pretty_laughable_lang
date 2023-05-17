@@ -1354,9 +1354,9 @@ class CodeGen:
         self.store_rax(dst)
 
     def cast8(self, var):
-        # movzx eax, byte ptr [rbx + var*8]
-        self.asm_disp(b"\x0f\xb6", CodeGen.A, CodeGen.B, var * 8)
-        self.store_rax(var)
+        # and qword ptr [rbx + var*8], 0xff
+        self.asm_disp(b"\x48\x81", 4, CodeGen.B, var * 8)
+        self.i32(0xff)
 
     def syscall(self, dst, num, *arg_list):
         # syscall ref: https://blog.rchapman.org/posts/Linux_System_Call_Table_for_x86_64/

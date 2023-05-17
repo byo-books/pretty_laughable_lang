@@ -1,7 +1,7 @@
 
 (def (mmap ptr byte) ((n int)) (do
-    (var prot 3)            ; PROT_READ|PROT_WRITE
-    (var flags 0x22)        ; MAP_PRIVATE|MAP_ANONYMOUS
+    (var prot 3)            ;; PROT_READ|PROT_WRITE
+    (var flags 0x22)        ;; MAP_PRIVATE|MAP_ANONYMOUS
     (var fd -1)
     (var offset 0)
     (var r (syscall 9 0 n prot flags fd offset))

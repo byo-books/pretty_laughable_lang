@@ -24,6 +24,8 @@
 
 ; allocate a new string.
 ; the length and capacity are stored before the string data.
+; | len | cap | data
+; |  8  |  8  | ....
 (def (strnew ptr byte) ((cap int)) (do
     (var addr (call malloc (+ 16 cap)))
     (var iaddr (cast (ptr int) addr))
@@ -98,7 +100,7 @@
     (return s)
 ))
 
-; convert a int to string
+; convert an int to string
 ; FIXME: negative numbers
 (def (str ptr byte) ((i int)) (do
     (var s (call strnew 24))
@@ -112,7 +114,7 @@
     (return s)
 ))
 
-; print a int
+; print an int
 (def (print void) ((i int)) (do
     (var s (call str i))
     (call print s)
