@@ -222,4 +222,4 @@ To be added.
 
 But you can learn how to do it by reading the source code.
 
-Or you might like the WIP book [From Source Code To Machine Code](https://build-your-own.org/compiler/), which this repo is based on.
+Or you might like the book [From Source Code To Machine Code](https://build-your-own.org/compiler/), which this repo is based on.
