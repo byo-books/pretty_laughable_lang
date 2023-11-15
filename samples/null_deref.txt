@@ -1,0 +1,1 @@
+(peek (cast (ptr int) 0))   ;; dereference the NULL pointer
