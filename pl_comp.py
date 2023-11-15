@@ -1677,6 +1677,7 @@ def main():
     ap.add_argument('-o', '--output', help='the output path')
     ap.add_argument('--print-ir', action='store_true', help='print the intermediate representation')
     ap.add_argument('--alignment', type=int, default=16)
+    ap.add_argument('--vaddr', type=int, default=0x1000, help='the virtual address for the program')
     args = ap.parse_args()
     if not (args.file or args.output or args.exec):
         ap.print_help()
@@ -1697,6 +1698,7 @@ def main():
     # generate output
     if args.output:
         gen = CodeGen()
+        gen.vaddr = args.vaddr
         gen.alignment = args.alignment
         gen.output_elf(root)
         fd = os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o755)
